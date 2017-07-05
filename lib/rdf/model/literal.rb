@@ -142,6 +142,19 @@ module RDF
     # @return [URI] The XML Schema datatype URI (optional).
     attr_accessor :datatype
 
+    class << self
+
+      # @return the default language for langString if none provided
+      def default_language
+        @default_language
+      end
+
+      # @param lang The default language to use for unspecified langString values
+      def default_language=(lang)
+        @default_language = lang
+      end
+    end
+
     ##
     # Literals without a datatype are given either xsd:string or rdf:langString
     # depending on if there is language
@@ -171,7 +184,13 @@ module RDF
       @datatype = RDF::URI(datatype).freeze if datatype
       @datatype ||= self.class.const_get(:DATATYPE) if self.class.const_defined?(:DATATYPE)
       @datatype ||= @language ? RDF.langString : RDF::XSD.string
-      raise ArgumentError, "datatype of rdf:langString requires a language" if !@language && @datatype == RDF::langString
+      if !@language && @datatype == RDF::langString
+        if self.class.default_language
+          @language = self.class.default_language
+        else
+          raise ArgumentError, "datatype of rdf:langString requires a language"
+        end
+      end
     end
 
     ##
