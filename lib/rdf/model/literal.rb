@@ -185,11 +185,7 @@ module RDF
       @datatype ||= self.class.const_get(:DATATYPE) if self.class.const_defined?(:DATATYPE)
       @datatype ||= @language ? RDF.langString : RDF::URI("http://www.w3.org/2001/XMLSchema#string")
       if !@language && @datatype == RDF::langString
-        if self.class.default_language
-          @language = self.class.default_language
-        else
-          raise ArgumentError, "datatype of rdf:langString requires a language"
-        end
+        @language = self.class.default_language
       end
     end
 
