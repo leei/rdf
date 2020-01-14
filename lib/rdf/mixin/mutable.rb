@@ -9,6 +9,7 @@ module RDF
     extend  RDF::Util::Aliasing::LateBound
     include RDF::Readable
     include RDF::Writable
+    include RDF::Util::Coercions
 
     ##
     # Returns `true` if `self` is mutable.
@@ -37,10 +38,10 @@ module RDF
     # @option options [RDF::Resource] :graph_name
     #   Set set graph name of each loaded statement
     # @return [void]
-     def load(url, graph_name: nil, **options)
+    def load(url, graph_name: nil, **options)
       raise TypeError.new("#{self} is immutable") if immutable?
 
-      Reader.open(url, {base_uri: url}.merge(options)) do |reader|
+      Reader.open(url, base_uri: url, **options) do |reader|
         if graph_name
           statements = []
           reader.each_statement do |statement|
@@ -154,20 +155,9 @@ module RDF
     def delete(*statements)
       raise TypeError.new("#{self} is immutable") if immutable?
 
-      statements.map! do |value|
-        case
-          when value.respond_to?(:each_statement)
-            delete_statements(value)
-            nil
-          when (statement = Statement.from(value)).constant?
-            statement
-          else
-            delete_statements(query(value))
-            nil
-        end
+      coerce_statements(statements, query: true, constant: true) do |value|
+        delete_statements(value)
       end
-      statements.compact!
-      delete_statements(statements) unless statements.empty?
 
       return self
     end

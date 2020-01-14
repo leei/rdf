@@ -5,7 +5,7 @@ module RDF; class Literal
   # @see   http://www.w3.org/TR/xmlschema11-2/#date
   # @since 0.2.1
   class Date < Literal
-    DATATYPE = RDF::XSD.date
+    DATATYPE = RDF::URI("http://www.w3.org/2001/XMLSchema#date")
     GRAMMAR  = %r(\A(-?\d{4}-\d{2}-\d{2})((?:[\+\-]\d{2}:\d{2})|UTC|GMT|Z)?\Z).freeze
     FORMAT   = '%Y-%m-%d'.freeze
 
@@ -19,7 +19,7 @@ module RDF; class Literal
         when value.is_a?(::Date)         then value
         when value.respond_to?(:to_date) then value.to_date
         else ::Date.parse(value.to_s)
-      end rescue nil
+      end rescue ::Date.new
     end
 
     ##

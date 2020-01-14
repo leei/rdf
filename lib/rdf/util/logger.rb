@@ -1,5 +1,6 @@
 # coding: utf-8
 require 'logger'
+require 'delegate'
 
 module RDF; module Util
   ##
@@ -8,6 +9,9 @@ module RDF; module Util
   # Modules must provide `@logger`, which returns an instance of `Logger`, or something responding to `#<<`. Logger may also be specified using an `@options` hash containing a `:logger` entry.
   # @since 2.0.0
   module Logger
+    # The IOWrapper class is used to store per-logger state while wrapping an IO such as $stderr.
+    IOWrapper = DelegateClass(IO)
+
     ##
     # Logger instance, found using `options[:logger]`, `@logger`, or `@options[:logger]`
     # @param [Hash{Symbol => Object}] options
@@ -18,7 +22,7 @@ module RDF; module Util
       logger = @options[:logger] if logger.nil? && @options
       if logger.nil?
         # Unless otherwise specified, use $stderr
-        logger = (@options || options)[:logger] = $stderr
+        logger = (@options || options)[:logger] = IOWrapper.new($stderr)
 
         # Reset log_statistics so that it's not inherited across different instances
         logger.log_statistics.clear if logger.respond_to?(:log_statistics)
@@ -34,7 +38,7 @@ module RDF; module Util
     # @option options [Logger, #<<] :logger
     # @return [Hash{Symbol => Integer}]
     def log_statistics(**options)
-      logger(options).log_statistics
+      logger(**options).log_statistics
     end
 
     ##
@@ -80,7 +84,7 @@ module RDF; module Util
     #   @return [void]
     #   @raise Raises the provided exception class using the first element from args as the message component, if `:exception` option is provided.
     def log_error(*args, level: :error, **options, &block)
-      logger = self.logger(options)
+      logger = self.logger(**options)
       return if logger.recovering
       logger.recovering = true
       logger_common(*args, level: level, **options, &block)
@@ -92,7 +96,7 @@ module RDF; module Util
     # @option options [Logger, #<<] :logger
     # @return [Boolean]
     def log_recovering?(**options)
-      self.logger(options).recovering
+      self.logger(**options).recovering
     end
 
     ##
@@ -131,7 +135,7 @@ module RDF; module Util
     #   @yieldreturn [String] added to message
     #   @return [void]
     def log_recover(*args, level: :info, **options, &block)
-      logger = self.logger(options)
+      logger = self.logger(**options)
       logger.recovering = false
       return if args.empty? && !block_given?
       logger_common(*args, level: level, **options, &block)
@@ -188,10 +192,15 @@ module RDF; module Util
     #   # Return the current log depth
     #   @return [Integer]
     def log_depth(**options, &block)
-      self.logger(options).log_depth(&block)
+      self.logger(**options).log_depth(&block)
     end
 
   private
+    LOGGER_COMMON_LEVELS = {
+      fatal: 4, error: 3, warn: 2, info: 1, debug: 0
+    }.freeze
+    LOGGER_COMMON_LEVELS_REVERSE = LOGGER_COMMON_LEVELS.invert.freeze
+
     ##
     # Common method for logging messages
     #
@@ -209,11 +218,11 @@ module RDF; module Util
     #   @yieldreturn [String] added to message
     #   @return [void]
     def logger_common(*args, level:, **options)
-      logger = self.logger(options)
+      logger = self.logger(**options)
       logger.log_statistics[level] = logger.log_statistics[level].to_i + 1
       # Some older code uses integer level numbers
-      level = [:debug, :info, :warn, :error, :fatal][level] if level.is_a?(Integer)
-      return if logger.level > {fatal: 4, error: 3, warn: 2, info: 1, debug: 0}[level]
+      level = LOGGER_COMMON_LEVELS_REVERSE.fetch(level) if level.is_a?(Integer)
+      return if logger.level > LOGGER_COMMON_LEVELS.fetch(level)
 
       depth = options.fetch(:depth, logger.log_depth)
       args << yield if block_given?

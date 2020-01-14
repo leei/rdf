@@ -36,7 +36,7 @@ module RDF
       # @param [String] sample Beginning several bytes (about 1K) of input.
       # @return [Boolean]
       def self.detect(sample)
-        !!sample.match(%r(
+        sample.match?(%r(
           (?:\s*(?:<[^>]*>) | (?:_:\w+))                          # Subject
           \s*
           (?:\s*<[^>]*>)                                          # Predicate
@@ -46,8 +46,8 @@ module RDF
           (?:\s*(?:<[^>]*>) | (?:_:\w+))                          # Graph Name
           \s*\.
         )x) && !(
-          sample.match(%r(@(base|prefix|keywords)|\{)) ||         # Not Turtle/N3/TriG
-          sample.match(%r(<(html|rdf))i)                          # Not HTML or XML
+          sample.match?(%r(@(base|prefix|keywords)|\{)) ||         # Not Turtle/N3/TriG
+          sample.match?(%r(<(html|rdf))i)                          # Not HTML or XML
         )
       end
 
@@ -96,7 +96,7 @@ module RDF
       # @param  [RDF::Term]     object
       # @return [void]
       def write_quad(subject, predicate, object, graph_name)
-        puts format_quad(subject, predicate, object, graph_name, @options)
+        puts format_quad(subject, predicate, object, graph_name, **@options)
       end
 
       ##
@@ -107,7 +107,7 @@ module RDF
       # @return [String]
       # @since  0.4.0
       def format_statement(statement, **options)
-        format_quad(*statement.to_quad, options)
+        format_quad(*statement.to_quad, **options)
       end
 
       ##
@@ -120,8 +120,8 @@ module RDF
       # @param  [Hash{Symbol => Object}] options = ({})
       # @return [String]
       def format_quad(subject, predicate, object, graph_name, **options)
-        s = "%s %s %s " % [subject, predicate, object].map { |value| format_term(value, options) }
-        s += format_term(graph_name, options) + " " if graph_name
+        s = "%s %s %s " % [subject, predicate, object].map { |value| format_term(value, **options) }
+        s += format_term(graph_name, **options) + " " if graph_name
         s + "."
       end
     end # Writer

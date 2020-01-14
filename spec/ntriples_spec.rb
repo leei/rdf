@@ -213,12 +213,13 @@ describe RDF::NTriples::Reader do
         "_\\u6C34_"                    => "_\xE6\xB0\xB4_",
         "\\u677E\\u672C \\u540E\\u5B50"=> "松本 后子",
         "D\\u00FCrst"                  => "Dürst",
+        "\\u0039"                      => "9",
+        "\\\\u0039"                    => "\\u0039",
       }
       strings.each do |string, unescaped|
         specify string do
           unescaped = unescaped.encode(Encoding::UTF_8)
           expect(reader.unescape(string.freeze)).to eq unescaped
-
         end
       end
     end
@@ -266,19 +267,19 @@ describe RDF::NTriples::Reader do
     expect(hello).to be_a_literal
     expect(hello.value).to eq 'Hello'
 
-    stmt = reader.unserialize("<http://rubygems.org/gems/rdf> <http://purl.org/dc/terms/creator> <http://ar.to/#self> .".freeze)
+    stmt = reader.unserialize("<https://rubygems.org/gems/rdf> <http://purl.org/dc/terms/creator> <http://ar.to/#self> .".freeze)
     expect(stmt).not_to be_nil
     expect(stmt).to be_a_statement
   end
 
   describe "BNodes" do
-    it "should read two named nodes as the same node", pending: ("#to_ary messing with JRuby" if RUBY_ENGINE == 'jruby') do
+    it "should read two named nodes as the same node" do
       stmt = reader.new("_:a <http://www.w3.org/2002/07/owl#sameAs> _:a .".freeze).first
       expect(stmt.subject).to eq stmt.object
       expect(stmt.subject).to be_eql(stmt.object)
     end
 
-    it "should read two named nodes in different instances as different nodes", pending: ("#to_ary messing with JRuby" if RUBY_ENGINE == 'jruby') do
+    it "should read two named nodes in different instances as different nodes" do
       stmt1 = reader.new("_:a <http://www.w3.org/2002/07/owl#sameAs> _:a .".freeze).first
       stmt2 = reader.new("_:a <http://www.w3.org/2002/07/owl#sameAs> _:a .".freeze).first
       expect(stmt1.subject).to eq stmt2.subject
@@ -291,6 +292,7 @@ describe RDF::NTriples::Reader do
       'Dürst'          => '_:a <http://pred> "D\u00FCrst" .',
       'simple literal' => '<http://subj> <http://pred>  "simple literal" .',
       'backslash:\\'   => '<http://subj> <http://pred> "backslash:\\\\" .',
+      'squote:\''      => '<http://subj> <http://pred> "squote:\'" .',
       'dquote:"'       => '<http://subj> <http://pred> "dquote:\"" .',
       "newline:\n"     => '<http://subj> <http://pred> "newline:\n" .',
       "return\r"       => '<http://subj> <http://pred> "return\r" .',
@@ -300,7 +302,7 @@ describe RDF::NTriples::Reader do
       "é"              => '<http://subj> <http://pred> "\u00E9" .',
       "€"              => '<http://subj> <http://pred> "\u20AC" .',
     }.each_pair do |contents, triple|
-      specify "test #{contents}", pending: ("#to_ary messing with JRuby" if RUBY_ENGINE == 'jruby') do
+      specify "test #{contents}" do
         stmt = reader.new(triple).first
         expect(stmt.object.value).to eq contents
         ttl = RDF::Turtle::Reader.new(triple).first
@@ -334,10 +336,11 @@ describe RDF::NTriples::Reader do
       "line ending with CR NL" => "<http://example.org/resource4> <http://example.org/property> <http://example.org/resource2> .\r\n",
       "literal escapes (1)" => '<http://example.org/resource7> <http://example.org/property> "simple literal" .',
       "literal escapes (2)" => '<http://example.org/resource8> <http://example.org/property> "backslash:\\\\" .',
-      "literal escapes (3)" => '<http://example.org/resource9> <http://example.org/property> "dquote:\"" .',
-      "literal escapes (4)" => '<http://example.org/resource10> <http://example.org/property> "newline:\n" .',
-      "literal escapes (5)" => '<http://example.org/resource11> <http://example.org/property> "return:\r" .',
-      "literal escapes (6)" => '<http://example.org/resource12> <http://example.org/property> "tab:\t" .',
+      "literal escapes (3)" => '<http://example.org/resource9> <http://example.org/property> "squote:\'" .',
+      "literal escapes (4)" => '<http://example.org/resource9> <http://example.org/property> "dquote:\"" .',
+      "literal escapes (5)" => '<http://example.org/resource10> <http://example.org/property> "newline:\n" .',
+      "literal escapes (6)" => '<http://example.org/resource11> <http://example.org/property> "return:\r" .',
+      "literal escapes (7)" => '<http://example.org/resource12> <http://example.org/property> "tab:\t" .',
       "Space is optional before final . (2)" => ['<http://example.org/resource14> <http://example.org/property> "x".', '<http://example.org/resource14> <http://example.org/property> "x" .'],
 
       "XML Literals as Datatyped Literals (1)" => '<http://example.org/resource21> <http://example.org/property> ""^^<http://www.w3.org/2000/01/rdf-schema#XMLLiteral> .',
@@ -456,13 +459,13 @@ describe RDF::NTriples::Writer do
   let(:logger) {RDF::Spec.logger}
   let(:writer) { RDF::NTriples::Writer }
   let!(:stmt) {
-    s = RDF::URI("http://rubygems.org/gems/rdf")
+    s = RDF::URI("https://rubygems.org/gems/rdf")
     p = RDF::URI("http://purl.org/dc/terms/creator")
     o = RDF::URI("http://ar.to/#self")
     RDF::Statement(s, p, o)
   }
   let!(:stmt_string) {
-    "<http://rubygems.org/gems/rdf> <http://purl.org/dc/terms/creator> <http://ar.to/#self> ."
+    "<https://rubygems.org/gems/rdf> <http://purl.org/dc/terms/creator> <http://ar.to/#self> ."
   }
   let!(:graph) {RDF::Graph.new << stmt}
   subject { RDF::NTriples::Writer.new }
@@ -529,7 +532,7 @@ describe RDF::NTriples::Writer do
     end
 
     it "should correctly format URI references" do
-      expect(writer.new.format_uri(RDF::URI('http://rubygems.org/gems/rdf'))).to eq '<http://rubygems.org/gems/rdf>'
+      expect(writer.new.format_uri(RDF::URI('https://rubygems.org/gems/rdf'))).to eq '<https://rubygems.org/gems/rdf>'
     end
 
     it "should correctly format plain literals" do
@@ -662,13 +665,6 @@ describe RDF::NTriples::Writer do
           s = writer.dump(graph, output, encoding: encoding)
           expect(output.external_encoding).to eq encoding
         end
-
-        it "takes encoding from file external_encoding" do
-          output = StringIO.new
-          output.set_encoding encoding
-          s = writer.dump(graph, output)
-          expect(output.external_encoding).to eq encoding
-        end
       end
     end
 
@@ -677,15 +673,19 @@ describe RDF::NTriples::Writer do
 
       # @see http://www.w3.org/TR/rdf-testcases/#ntrip_strings
       it "should correctly escape ASCII characters (#x0-#x7F)" do
-        (0x00..0x08).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
-        expect(writer.escape(0x09.chr, encoding)).to eq "\\t"
+        (0x00..0x07).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
+        expect(writer.escape(0x08.chr, encoding)).to eq "\b"
+        expect(writer.escape(0x09.chr, encoding)).to eq "\t"
         expect(writer.escape(0x0A.chr, encoding)).to eq "\\n"
-        (0x0B..0x0C).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
+        expect(writer.escape(0x0B.chr, encoding)).to eq "\v"
+        expect(writer.escape(0x0C.chr, encoding)).to eq "\f"
         expect(writer.escape(0x0D.chr, encoding)).to eq "\\r"
         (0x0E..0x1F).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
         (0x20..0x21).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x22.chr, encoding)).to eq "\\\""
-        (0x23..0x5B).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
+        (0x23..0x26).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
+        expect(writer.escape(0x27.chr, encoding)).to eq "'"
+        (0x28..0x5B).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x5C.chr, encoding)).to eq "\\\\"
         (0x5D..0x7E).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x7F.chr, encoding)).to eq "\\u007F"
@@ -736,16 +736,18 @@ describe RDF::NTriples::Writer do
       # @see http://www.w3.org/TR/rdf-testcases/#ntrip_strings
       it "should correctly escape ASCII characters (#x0-#x7F)" do
         (0x00..0x07).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
-        expect(writer.escape(0x08.chr, encoding)).to eq (encoding ? "\\b" : "\\u0008")
-        expect(writer.escape(0x09.chr, encoding)).to eq "\\t"
+        expect(writer.escape(0x08.chr, encoding)).to eq "\b"
+        expect(writer.escape(0x09.chr, encoding)).to eq "\t"
         expect(writer.escape(0x0A.chr, encoding)).to eq "\\n"
-        (0x0B..0x0B).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
-        expect(writer.escape(0x0C.chr, encoding)).to eq (encoding ? "\\f" : "\\u000C")
+        expect(writer.escape(0x0B.chr, encoding)).to eq "\v"
+        expect(writer.escape(0x0C.chr, encoding)).to eq "\f"
         expect(writer.escape(0x0D.chr, encoding)).to eq "\\r"
         (0x0E..0x1F).each { |u| expect(writer.escape(u.chr, encoding)).to eq "\\u#{u.to_s(16).upcase.rjust(4, '0')}" }
         (0x20..0x21).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x22.chr, encoding)).to eq "\\\""
-        (0x23..0x5B).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
+        (0x23..0x26).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
+        expect(writer.escape(0x27.chr, encoding)).to eq "'"
+        (0x28..0x5B).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x5C.chr, encoding)).to eq "\\\\"
         (0x5D..0x7E).each { |u| expect(writer.escape(u.chr, encoding)).to eq u.chr }
         expect(writer.escape(0x7F.chr, encoding)).to eq "\\u007F"
@@ -803,17 +805,17 @@ describe RDF::NTriples::Writer do
     end
 
     {
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
       RDF::Statement(RDF::Node("node"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::Node("node")) => true,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::Literal("literal")) => true,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::Node("node")) => true,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::Literal("literal")) => true,
       RDF::Statement(RDF::URI('file:///path/to/file with spaces.txt'), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
       RDF::Statement(nil, RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => false,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), nil) => false,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => false,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), nil) => false,
       RDF::Statement(RDF::Literal("literal"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::Node("node"), RDF::URI("http://ar.to/#self")) => false,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => false,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::Node("node"), RDF::URI("http://ar.to/#self")) => false,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => false,
       RDF::Statement(RDF::URI('scheme://auth/\\u0000'), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
       RDF::Statement(RDF::URI('scheme://auth/^'), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
       RDF::Statement(RDF::URI('scheme://auth/`'), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
@@ -837,19 +839,40 @@ describe RDF::NTriples::Writer do
     end
 
     {
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")) =>
-        RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")),
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::Literal("literal")) =>
-        RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::Literal("literal")),
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")) =>
+        RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")),
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::Literal("literal")) =>
+        RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::Literal("literal")),
       RDF::Statement(RDF::URI('file:///path/to/file with spaces.txt'), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")) =>
         RDF::Statement(RDF::URI('file:///path/to/file%20with%20spaces.txt'), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")),
       RDF::Statement(nil, RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")) => nil,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => nil,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, nil) => nil,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => nil,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator").dup, nil) => nil,
       RDF::Statement(RDF::Literal("literal"), RDF::URI("http://purl.org/dc/terms/creator").dup, RDF::URI("http://ar.to/#self")) => nil,
-      RDF::Statement(RDF::URI("http://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => nil,
+      RDF::Statement(RDF::URI("https://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => nil,
     }.each do |st, result|
       include_examples "c14n", st, result
+    end
+  end
+
+  context "logging behavior when dumping invalid statements multiple times in a row" do
+    before do
+      allow($stderr).to receive(:write)
+    end
+
+    it "raises each time an invalid statement is dumped (not only the first time)" do
+      g = RDF::Graph.new
+      g.from_ntriples('<https://rubygems.org/gems/rdf/resource/0cb45b70-4c37-4270-9955-350c636496fc> <https://rubygems.org/gems/rdf/ontology/xxx/1.1#testDate> "2018-06-01T16:30:00Z"^^<http://www.w3.org/2001/XMLSchema#date> .')
+
+      errors = (1..5).map do |_|
+        begin
+          g.dump(:ntriples)
+          'noraise'
+        rescue RDF::WriterError
+          'raise'
+        end
+      end
+      expect(errors).to eq(['raise'] * 5)
     end
   end
 end
@@ -959,7 +982,7 @@ def parse(input, **options)
     canonicalize: false,
   }.merge(options)
   graph = options[:graph] || RDF::Graph.new
-  RDF::NTriples::Reader.new(input, options).each do |statement|
+  RDF::NTriples::Reader.new(input, **options).each do |statement|
     graph << statement
   end
   graph

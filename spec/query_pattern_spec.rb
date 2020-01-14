@@ -10,7 +10,7 @@ describe RDF::Query::Pattern do
       end
 
       it "creates using hash" do
-        expect(described_class.from(subject: :s, predicate: :p, object: :o)).to eq described_class.new(:s, :p, :o)
+        expect(described_class.from({subject: :s, predicate: :p, object: :o})).to eq described_class.new(:s, :p, :o)
       end
 
       it "creates using quad array" do
@@ -18,9 +18,12 @@ describe RDF::Query::Pattern do
       end
 
       it "creates using hash" do
-        expect(described_class.from(subject: :s, predicate: :p, object: :o, graph_name: :c)).to eq described_class.new(:s, :p, :o, graph_name: :c)
+        expect(described_class.from({subject: :s, predicate: :p, object: :o}, graph_name: :c)).to eq described_class.new(:s, :p, :o, graph_name: :c)
+        expect(described_class.from({subject: :s, predicate: :p, object: :o, graph_name: :c})).to eq described_class.new(:s, :p, :o, graph_name: :c)
       end
     end
+
+    its(:cost) {is_expected.to be (4+2+1)}
 
     it "should not have variables" do
       expect(subject.variables?).to be_falsey
@@ -52,9 +55,11 @@ describe RDF::Query::Pattern do
     let(:s) {RDF::Query::Variable.new(:s, true)}
     subject {described_class.new(s)}
 
-    specify {expect(subject).not_to be_constant}
-    specify {expect(subject).to be_variable}
-    specify {expect(subject).to be_bound}
+    specify {is_expected.not_to be_constant}
+    specify {is_expected.to be_variable}
+    specify {is_expected.to be_bound}
+
+    its(:cost) {is_expected.to be (4+2+1)}
 
     it "should have one variable" do
       expect(subject).to be_variables
@@ -73,8 +78,8 @@ describe RDF::Query::Pattern do
     end
 
     it "should be fully bound" do
-      expect(subject).not_to be_unbound
-      expect(subject).to be_bound
+      is_expected.not_to be_unbound
+      is_expected.to be_bound
     end
 
     it "should have one binding" do
@@ -90,9 +95,11 @@ describe RDF::Query::Pattern do
     let(:o) {RDF::Query::Variable.new(:o, true)}
     subject {described_class.new(s, p, o)}
 
-    specify {expect(subject).not_to be_constant}
-    specify {expect(subject).to be_variable}
-    specify {expect(subject).to be_bound}
+    specify {is_expected.not_to be_constant}
+    specify {is_expected.to be_variable}
+    specify {is_expected.to be_bound}
+
+    its(:cost) {is_expected.to be (4+2+1)}
 
     it "should have three variables" do
       expect(subject).to be_variables
@@ -111,8 +118,8 @@ describe RDF::Query::Pattern do
     end
 
     it "should be fully bound" do
-      expect(subject).not_to be_unbound
-      expect(subject).to be_bound
+      is_expected.not_to be_unbound
+      is_expected.to be_bound
     end
 
     it "should have three bindings" do
@@ -122,18 +129,45 @@ describe RDF::Query::Pattern do
     end
   end
 
+  context "with variable in different locations" do
+    {
+      "spog": [[RDF::URI("s"), RDF::URI("p"), RDF::URI("o"), graph_name: RDF::URI("g")], 0],
+      "spo?": [[RDF::URI("s"), RDF::URI("p"), RDF::URI("o"), graph_name: :g], 8],
+      "sp?g": [[RDF::URI("s"), RDF::URI("p"), :o, graph_name: RDF::URI("g")], 1],
+      "s?og": [[RDF::URI("s"), :p, RDF::URI("o"), graph_name: RDF::URI("g")], 2],
+      "?pog": [[:s, RDF::URI("p"), RDF::URI("o"), graph_name: RDF::URI("g")], 4],
+    }.each do |name, (args, cost)|
+      it "cost for #{name} should be #{cost}" do
+        pattern = described_class.new(*args)
+        expect(pattern.cost).to be cost
+      end
+    end
+  end
+
+  context "#cost" do
+    it "can be set separately" do
+      expect(subject.cost).to be (4+2+1)
+      subject.cost = 0
+      expect(subject.cost).to be 0
+    end
+  end
+
   context "with a graph_name" do
     let(:s) {RDF::Query::Variable.new(:s, true)}
     let(:p) {RDF::Query::Variable.new(:p, true)}
     let(:o) {RDF::Query::Variable.new(:o, true)}
+    subject {described_class.new(s, p, o, graph_name: :c)}
+
     it "uses a variable for a symbol" do
-      pattern = described_class.new(s, p, o, graph_name: :c)
-      expect(pattern.graph_name).to eq RDF::Query::Variable.new(:c)
+      expect(subject.graph_name).to eq RDF::Query::Variable.new(:c)
     end
+
+    its(:cost) {is_expected.to be (8+4+2+1)}
 
     it "uses a constant for :default" do
       pattern = described_class.new(s, p, o, graph_name: false)
       expect(pattern.graph_name).to eq false
+      expect(pattern.cost).to eq (4+2+1)
     end
   end
   
@@ -143,9 +177,11 @@ describe RDF::Query::Pattern do
     let(:o) {RDF::Query::Variable.new(:o)}
     subject {described_class.new(s, p, o)}
 
-    specify {expect(subject).not_to be_constant}
-    specify {expect(subject).to be_variable}
-    specify {expect(subject).not_to be_bound}
+    specify {is_expected.not_to be_constant}
+    specify {is_expected.to be_variable}
+    specify {is_expected.not_to be_bound}
+
+    its(:cost) {is_expected.to be (4+2+1)}
 
     describe "#bind" do
       context "complete solution" do
@@ -162,16 +198,16 @@ describe RDF::Query::Pattern do
 
   context "validataion" do
     {
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
       described_class.new(nil, RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => true,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), nil) => true,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), nil, RDF::URI("http://ar.to/#self")) => true,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), nil) => true,
       described_class.new(:var, RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => true,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), :var, RDF::URI("http://ar.to/#self")) => true,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var) => true,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), :var, RDF::URI("http://ar.to/#self")) => true,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var) => true,
       described_class.new(RDF::Literal("literal"), RDF::URI("http://purl.org/dc/terms/creator"), RDF::URI("http://ar.to/#self")) => false,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::Node("node"), RDF::URI("http://ar.to/#self")) => false,
-      described_class.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => false,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::Node("node"), RDF::URI("http://ar.to/#self")) => false,
+      described_class.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::Literal("literal"), RDF::URI("http://ar.to/#self")) => false,
     }.each do |st, valid|
       context "given #{st}" do
         if valid
@@ -196,9 +232,11 @@ describe RDF::Query::Pattern do
     let(:p) {RDF::Query::Variable.new(:p)}
     subject {described_class.new(s, p)}
 
-    specify {expect(subject).not_to be_constant}
-    specify {expect(subject).to be_variable}
-    specify {expect(subject).not_to be_bound}
+    specify {is_expected.not_to be_constant}
+    specify {is_expected.to be_variable}
+    specify {is_expected.not_to be_bound}
+
+    its(:cost) {is_expected.to be (4+2+1)}
 
     it "should have two variable" do
       expect(subject).to be_variables
@@ -218,8 +256,8 @@ describe RDF::Query::Pattern do
     end
 
     it "should not be fully bound" do
-      expect(subject).not_to be_unbound
-      expect(subject).not_to be_bound
+      is_expected.not_to be_unbound
+      is_expected.not_to be_bound
     end
 
     it "should have one binding" do
@@ -249,7 +287,7 @@ describe RDF::Query::Pattern do
 
     describe "#variable_terms" do
       it "has term" do
-        expect(described_class.new(RDF::Node.new, :p, 123).variable_terms).to eq([:predicate])
+        expect(described_class.new(RDF::Node.new, :p, RDF::Literal(123)).variable_terms).to eq([:predicate])
       end
     end
 

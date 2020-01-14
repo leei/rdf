@@ -3,7 +3,7 @@ require File.join(File.dirname(__FILE__), 'spec_helper')
 
 describe RDF::URI do
   it "should be instantiable" do
-    expect { described_class.new('http://rubygems.org/gems/rdf') }.not_to raise_error
+    expect { described_class.new('https://rubygems.org/gems/rdf') }.not_to raise_error
   end
 
   describe ".intern" do
@@ -15,6 +15,10 @@ describe RDF::URI do
 
     it "freezes instance" do
       expect(RDF::URI.intern("a")).to be_frozen
+    end
+
+    it "freezes an instance with options" do
+      expect(RDF::URI.intern("http://example.org/", validate: true)).to be_frozen
     end
 
     it "does not use #to_hash given a URI" do
@@ -30,7 +34,7 @@ describe RDF::URI do
 
   context "as method" do
     it "with URI args" do
-      expect(described_class).to receive(:new).with("http://example/")
+      expect(described_class).to receive(:new).with("http://example/", any_args)
       RDF::URI("http://example/")
     end
 
@@ -92,7 +96,7 @@ describe RDF::URI do
     context "with hash" do
       context "simple" do
         subject {
-          RDF::URI.new({
+          RDF::URI.new(
             scheme: "http",
             user: "user",
             password: "password",
@@ -101,7 +105,7 @@ describe RDF::URI do
             path: "/path",
             query: "query=value",
             fragment: "fragment"
-          })
+          )
         }
 
         {
@@ -130,7 +134,7 @@ describe RDF::URI do
         "http://resource1" => {scheme: "http", host: "resource1", path: ""}
       }.each do |value, object|
         it "creates #{value}" do
-          expect(RDF::URI(object).to_s).to eq value
+          expect(RDF::URI(**object).to_s).to eq value
         end
       end
     end
@@ -228,14 +232,14 @@ describe RDF::URI do
 
   describe "#hash" do
     it "should have a consistent hash code" do
-      hash1 = described_class.new('http://rubygems.org/gems/rdf').hash
-      hash2 = described_class.new('http://rubygems.org/gems/rdf').hash
+      hash1 = described_class.new('https://rubygems.org/gems/rdf').hash
+      hash2 = described_class.new('https://rubygems.org/gems/rdf').hash
       expect(hash1).to eq hash2
     end
   end
 
   describe "#dup" do
-    let!(:uri1) {described_class.new('http://rubygems.org/gems/rdf')}
+    let!(:uri1) {described_class.new('https://rubygems.org/gems/rdf')}
     let!(:uri2) {uri1.dup}
     
     describe "original" do
@@ -606,6 +610,8 @@ describe RDF::URI do
       %w(http://a/bb/ccc/.. g#s) => "<http://a/bb/ccc/g#s>",
 
       %w(file:///a/bb/ccc/d;p?q g) => "<file:///a/bb/ccc/g>",
+      # merging rootless base URL paths (json-ld-api 397f48b959c4517fef55a7b2623ad432e923240c)
+      %w(tag:example a) => "<tag:a>",
     }.each_pair do |(lhs, rhs), result|
       it "creates #{result} from <#{lhs}> and '#{rhs}'" do
         expect(RDF::URI.new(lhs).join(rhs.to_s).to_base).to eq result
@@ -642,7 +648,7 @@ describe RDF::URI do
     {
       "http://example/"                       => "http://example/",
       "http://example/foo"                    => "http://example/",
-      'http://rubygems.org/gems/rdf'          => 'http://rubygems.org/',
+      'https://rubygems.org/gems/rdf'          => 'https://rubygems.org/',
       "mailto:gregg@greggkellogg.net"         => "mailto:gregg@greggkellogg.net",
       "urn:isbn:12345"                        => "urn:isbn:12345"
     }.each do |uri, root|
@@ -658,7 +664,7 @@ describe RDF::URI do
       "http://example/"                       => nil,
       "http://example/foo"                    => "http://example/",
       "http://example/foo/bar"                => "http://example/foo/",
-      'http://rubygems.org/gems/rdf'          => 'http://rubygems.org/gems/',
+      'https://rubygems.org/gems/rdf'          => 'https://rubygems.org/gems/',
       "mailto:gregg@greggkellogg.net"         => nil,
       "urn:isbn:12345"                        => nil
     }.each do |uri, parent|
@@ -803,7 +809,7 @@ describe RDF::URI do
 
   context "Examples" do
     it "Creating a URI reference (1)" do
-      expect(RDF::URI.new("http://rubygems.org/gems/rdf")).to be_a_uri
+      expect(RDF::URI.new("https://rubygems.org/gems/rdf")).to be_a_uri
     end
 
     it "Creating a URI reference (2)" do
@@ -812,14 +818,14 @@ describe RDF::URI do
     end
 
     it "Creating an interned URI reference" do
-      uri = RDF::URI.intern("http://rubygems.org/gems/rdf")
+      uri = RDF::URI.intern("https://rubygems.org/gems/rdf")
       expect(uri).to be_frozen
     end
 
     it "Getting the string representation of a URI" do
-      uri = RDF::URI.new("http://rubygems.org/gems/rdf")
+      uri = RDF::URI.new("https://rubygems.org/gems/rdf")
       expect(uri.to_s).to be_a(String)
-      expect(uri.to_s).to eql "http://rubygems.org/gems/rdf"
+      expect(uri.to_s).to eql "https://rubygems.org/gems/rdf"
     end
 
     it "#urn?" do
@@ -981,6 +987,19 @@ describe RDF::URI do
         subject.query_values = [['flag'], ['key', 'value']]
         expect(subject.query).to eql "flag&key=value"
       end
+    end
+  end
+
+  describe 'marshaling' do
+    subject { RDF::URI("http://example/") }
+
+    it "marshals them" do
+      marshaled = Marshal.dump(subject)
+      loaded    = Marshal.load(marshaled)
+
+      expect(loaded).to eq subject
+      # It should have a mutex
+      expect { loaded.freeze }.not_to raise_error
     end
   end
 end

@@ -19,6 +19,26 @@ describe RDF::Node do
     end
   end
 
+  describe ".uuid" do
+    it "generates a BNode" do
+      expect(described_class.uuid).to be_a_node
+    end
+
+    it "accepts format: :default" do
+      expect(described_class.uuid(format: :default)).to be_a_node
+    end
+
+    it "accepts format: :compact" do
+      expect(described_class.uuid(format: :compact)).to be_a_node
+    end
+
+    it "rejects grammar: option" do
+      expect {
+        described_class.uuid(grammar: /\S+/)
+      }.to raise_error(ArgumentError)
+    end
+  end
+
   context "as method" do
     it "with no args" do
       expect(described_class).to receive(:new).with(no_args)

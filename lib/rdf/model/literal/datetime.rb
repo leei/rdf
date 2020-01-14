@@ -5,9 +5,9 @@ module RDF; class Literal
   # @see   http://www.w3.org/TR/xmlschema11-2/#dateTime#boolean
   # @since 0.2.1
   class DateTime < Literal
-    DATATYPE = RDF::XSD.dateTime
-    GRAMMAR  = %r(\A(-?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)((?:[\+\-]\d{2}:\d{2})|UTC|GMT|Z)?\Z).freeze
-    FORMAT   = '%Y-%m-%dT%H:%M:%S%:z'.freeze
+    DATATYPE = RDF::URI("http://www.w3.org/2001/XMLSchema#dateTime")
+    GRAMMAR  = %r(\A(-?(?:\d{4}|[1-9]\d{4,})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)((?:[\+\-]\d{2}:\d{2})|UTC|GMT|Z)?\Z).freeze
+    FORMAT   = '%Y-%m-%dT%H:%M:%S.%L%:z'.freeze
 
     ##
     # @param  [DateTime] value
@@ -19,7 +19,7 @@ module RDF; class Literal
         when value.is_a?(::DateTime)         then value
         when value.respond_to?(:to_datetime) then value.to_datetime
         else ::DateTime.parse(value.to_s)
-      end rescue nil
+      end rescue ::DateTime.new
     end
 
     ##
@@ -31,9 +31,9 @@ module RDF; class Literal
     def canonicalize!
       if self.valid?
         @string = if has_timezone?
-          @object.new_offset.new_offset.strftime(FORMAT[0..-4] + 'Z')
+          @object.new_offset.new_offset.strftime(FORMAT[0..-4] + 'Z').sub('.000', '')
         else
-          @object.strftime(FORMAT[0..-4])
+          @object.strftime(FORMAT[0..-4]).sub('.000', '')
         end
       end
       self
@@ -57,14 +57,14 @@ module RDF; class Literal
     # @return [RDF::Literal]
     def timezone
       if tz == 'Z'
-        RDF::Literal("PT0S", datatype: RDF::XSD.dayTimeDuration)
+        RDF::Literal("PT0S", datatype: RDF::URI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"))
       elsif md = tz.to_s.match(/^([+-])?(\d+):(\d+)?$/)
         plus_minus, hour, min = md[1,3]
         plus_minus = nil unless plus_minus == "-"
         hour = hour.to_i
         min = min.to_i
         res = "#{plus_minus}PT#{hour}H#{"#{min}M" if min > 0}"
-        RDF::Literal(res, datatype: RDF::XSD.dayTimeDuration)
+        RDF::Literal(res, datatype: RDF::URI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"))
       end
     end
 
@@ -79,6 +79,16 @@ module RDF; class Literal
     def valid?
       super && object && value !~ %r(\A0000)
     end
+
+    ##
+    # Does the literal representation include millisectonds?
+    #
+    # @return [Boolean]
+    # @since 1.1.6
+    def has_milliseconds?
+      self.format("%L").to_i > 0
+    end
+    alias_method :has_ms?, :has_milliseconds?
 
     ##
     # Does the literal representation include a timezone? Note that this is only possible if initialized using a string, or `:lexical` option.
@@ -98,7 +108,7 @@ module RDF; class Literal
     #
     # @return [String]
     def to_s
-      @string || @object.strftime(FORMAT).sub("+00:00", 'Z')
+      @string || @object.strftime(FORMAT).sub("+00:00", 'Z').sub('.000', '')
     end
 
     ##

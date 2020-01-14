@@ -37,7 +37,7 @@ module RDF
   #   logger = Logger.new([])
   #   RDF::Writer.for(:ntriples).buffer(logger: logger) do |writer|
   #     statement = RDF::Statement.new(
-  #       RDF::URI("http://rubygems.org/gems/rdf"),
+  #       RDF::URI("https://rubygems.org/gems/rdf"),
   #       RDF::URI("http://purl.org/dc/terms/creator"),
   #       nil)
   #     writer << statement
@@ -79,7 +79,7 @@ module RDF
     #   @param  [String] filename
     #   @return [Class]
     #
-    # @overload for(**options)
+    # @overload for(options = {})
     #   Finds an RDF writer class based on various options.
     #
     #   @param  [Hash{Symbol => Object}] options
@@ -89,9 +89,15 @@ module RDF
     #   @return [Class]
     #
     # @return [Class]
-    def self.for(options = {})
-      options = options.merge(has_writer: true) if options.is_a?(Hash)
-      if format = self.format || Format.for(options)
+    def self.for(*arg, &block)
+      case arg.length
+      when 0 then arg = nil
+      when 1 then arg = arg.first
+      else
+        raise ArgumentError, "Format.for accepts zero or one argument, got #{arg.length}."
+      end
+      arg = arg.merge(has_writer: true) if arg.is_a?(Hash)
+      if format = self.format || Format.for(arg)
         format.writer
       end
     end
@@ -119,17 +125,20 @@ module RDF
         RDF::CLI::Option.new(
           symbol: :canonicalize,
           datatype: TrueClass,
+          control: :checkbox,
           on: ["--canonicalize"],
           description: "Canonicalize input/output.") {true},
         RDF::CLI::Option.new(
           symbol: :encoding,
           datatype: Encoding,
+          control: :text,
           on: ["--encoding ENCODING"],
           description: "The encoding of the input stream.") {|arg| Encoding.find arg},
         RDF::CLI::Option.new(
           symbol: :prefixes,
           datatype: Hash,
           multiple: true,
+          control: :none,
           on: ["--prefixes PREFIX,PREFIX"],
           description: "A comma-separated list of prefix:uri pairs.") do |arg|
             arg.split(',').inject({}) do |memo, pfxuri|
@@ -140,6 +149,7 @@ module RDF
         RDF::CLI::Option.new(
           symbol: :unique_bnodes,
           datatype: TrueClass,
+          control: :checkbox,
           on: ["--unique-bnodes"],
           description: "Use unique Node identifiers.") {true},
       ]
@@ -147,6 +157,22 @@ module RDF
 
     class << self
       alias_method :format_class, :format
+
+      ##
+      # Use parameters from accept-params to determine if the parameters are acceptable to invoke this writer. The `accept_params` will subsequently be provided to the writer instance.
+      #
+      # @example rejecting a writer based on a profile
+      #   JSON::LD::Writer.accept?(profile: "http://www.w3.org/ns/json-ld#compacted http://example.org/black-listed")
+      #     # => false
+      #
+      # @param [Hash{Symbol => String}] accept_params
+      # @yield [accept_params] if a block is given, returns the result of evaluating that block
+      # @yieldparam [Hash{Symbol => String}] accept_params
+      # @return [Boolean]
+      # @see    http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.1
+      def accept?(accept_params)
+        block_given? ? yield(accept_params) : true
+      end
     end
 
     ##
@@ -154,29 +180,22 @@ module RDF
     #   the graph or repository to dump
     # @param  [IO, File, String] io
     #   the output stream or file to write to
-    # @param [Encoding, String, Symbol] encoding
-    #   the encoding to use on the output stream.
-    #   Defaults to the format associated with `content_encoding`.
     # @param  [Hash{Symbol => Object}] options
     #   passed to {RDF::Writer#initialize} or {RDF::Writer.buffer}
     # @return [void]
-    def self.dump(data, io = nil, encoding: nil, **options)
-      if io.is_a?(String)
-        io = File.open(io, 'w')
-      elsif io.respond_to?(:external_encoding) && io.external_encoding
-        encoding ||= io.external_encoding
-      end
-      io.set_encoding(encoding) if io.respond_to?(:set_encoding) && encoding
+    def self.dump(data, io = nil, **options)
+      io = File.open(io, 'w') if io.is_a?(String)
       method = data.respond_to?(:each_statement) ? :each_statement : :each
       if io
-        new(io, encoding: encoding, **options) do |writer|
+        new(io, **options) do |writer|
+          io.set_encoding(writer.encoding) if io.respond_to?(:set_encoding)
           data.send(method) do |statement|
             writer << statement
           end
           writer.flush
         end
       else
-        buffer(encoding: encoding, **options) do |writer|
+        buffer(**options) do |writer|
           data.send(method) do |statement|
             writer << statement
           end
@@ -187,9 +206,6 @@ module RDF
     ##
     # Buffers output into a string buffer.
     #
-    # @param [Encoding, String, Symbol] encoding
-    #   the encoding to use on the output stream.
-    #   Defaults to the format associated with `content_encoding`.
     # @param  [Hash{Symbol => Object}] options
     #   passed to {RDF::Writer#initialize}
     # @yield  [writer]
@@ -197,13 +213,14 @@ module RDF
     # @yieldreturn [void]
     # @return [String]
     # @raise [ArgumentError] if no block is provided
-    def self.buffer(*args, encoding: nil, **options, &block)
-      encoding ||= Encoding::UTF_8 if RUBY_PLATFORM == "java"
+    def self.buffer(*args, **options, &block)
       raise ArgumentError, "block expected" unless block_given?
 
       StringIO.open do |buffer|
-        buffer.set_encoding(encoding) if encoding
-        self.new(buffer, *args, encoding: encoding, **options) { |writer| block.call(writer) }
+        self.new(buffer, *args, **options) do |writer|
+          buffer.set_encoding(writer.encoding)
+          block.call(writer)
+        end
         buffer.string
       end
     end
@@ -212,19 +229,18 @@ module RDF
     # Writes output to the given `filename`.
     #
     # @param  [String, #to_s] filename
-    # @param [Encoding, String, Symbol] encoding
-    #   the encoding to use on the output stream.
-    #   Defaults to the format associated with `content_encoding`.
     # @param [Symbol] format (nil)
     # @param  [Hash{Symbol => Object}] options
     #   any additional options (see {RDF::Writer#initialize} and {RDF::Format.for})
     # @return [RDF::Writer]
-    def self.open(filename, encoding: nil, format: nil, **options, &block)
+    def self.open(filename, format: nil, **options, &block)
       File.open(filename, 'wb') do |file|
-        file.set_encoding(encoding) if encoding
         format_options = options.dup
         format_options[:file_name] ||= filename
-        self.for(format || format_options).new(file, encoding: encoding, **options, &block)
+        self.for(format || format_options).new(file, **options) do |writer|
+          file.set_encoding(writer.encoding)
+          block.call(writer)
+        end
       end
     end
 
@@ -263,6 +279,8 @@ module RDF
     #   by all writers)
     # @option options [Boolean]  :unique_bnodes   (false)
     #   Use unique {Node} identifiers, defaults to using the identifier which the node was originall initialized with (if any). Implementations should ensure that Nodes are serialized using a unique representation independent of any identifier used when creating the node. See {NTriples::Writer#format_node}
+    # @option options [Hash{Symbol => String}] :accept_params
+    #   Parameters from ACCEPT header entry for the media-range matching this writer.
     # @yield  [writer] `self`
     # @yieldparam  [RDF::Writer] writer
     # @yieldreturn [void]
@@ -396,6 +414,7 @@ module RDF
     # @return [self]
     # @abstract
     def write_prologue
+      @logged_errors_at_prolog = log_statistics[:error].to_i
       self
     end
 
@@ -404,7 +423,7 @@ module RDF
     # @raise [RDF::WriterError] if errors logged during processing.
     # @abstract
     def write_epilogue
-      if log_statistics[:error]
+      if log_statistics[:error].to_i > @logged_errors_at_prolog
         raise RDF::WriterError, "Errors found during processing"
       end
       self
@@ -492,11 +511,11 @@ module RDF
     # @since  0.3.0
     def format_term(term, **options)
       case term
-        when String       then format_literal(RDF::Literal(term, options), options)
-        when RDF::List    then format_list(term, options)
-        when RDF::Literal then format_literal(term, options)
-        when RDF::URI     then format_uri(term, options)
-        when RDF::Node    then format_node(term, options)
+        when String       then format_literal(RDF::Literal(term, **options), **options)
+        when RDF::List    then format_list(term, **options)
+        when RDF::Literal then format_literal(term, **options)
+        when RDF::URI     then format_uri(term, **options)
+        when RDF::Node    then format_node(term, **options)
         else nil
       end
     end
@@ -540,7 +559,7 @@ module RDF
     # @abstract
     # @since  0.2.3
     def format_list(value, **options)
-      format_term(value.subject, options)
+      format_term(value.subject, **options)
     end
 
   protected

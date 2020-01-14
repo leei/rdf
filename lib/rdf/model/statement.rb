@@ -3,7 +3,7 @@ module RDF
   # An RDF statement.
   #
   # @example Creating an RDF statement
-  #   s = RDF::URI.new("http://rubygems.org/gems/rdf")
+  #   s = RDF::URI.new("https://rubygems.org/gems/rdf")
   #   p = RDF::Vocab::DC.creator
   #   o = RDF::URI.new("http://ar.to/#self")
   #   RDF::Statement(s, p, o)
@@ -14,7 +14,7 @@ module RDF
   #
   # @example Creating an RDF statement from a `Hash`
   #   RDF::Statement({
-  #     subject:   RDF::URI.new("http://rubygems.org/gems/rdf"),
+  #     subject:   RDF::URI.new("https://rubygems.org/gems/rdf"),
   #     predicate: RDF::Vocab::DC.creator,
   #     object:    RDF::URI.new("http://ar.to/#self"),
   #   })
@@ -56,6 +56,9 @@ module RDF
 
     # @return [RDF::Term]
     attr_accessor :object
+
+    # @return [Hash{Symbol => Object}]
+    attr_accessor :options
 
     ##
     # @overload initialize(**options)
@@ -340,13 +343,6 @@ module RDF
     alias_method :to_a, :to_triple
 
     ##
-    # @deprecated use {#to_a} or {#to_triple} instead
-    # @see #to_triple
-    def to_ary
-      to_triple
-    end
-
-    ##
     # Canonicalizes each unfrozen term in the statement
     #
     # @return [RDF::Statement] `self`
@@ -412,27 +408,6 @@ module RDF
         graph << [subject, RDF.subject,   self.subject]
         graph << [subject, RDF.predicate, self.predicate]
         graph << [subject, RDF.object,    self.object]
-      end
-    end
-
-  protected
-    ##
-    # @overload #to_hash
-    # Returns the terms of this statement as a `Hash`.
-    #
-    # @param  (see #to_h)
-    # @return (see #to_h)
-    #   @deprecated Use {#to_h} instead.
-    def method_missing(meth, *args)
-      case meth
-      when :to_hash
-        warn "[DEPRECATION] RDF::Statement#to_hash is deprecated, use RDF::Statement#to_h instead.\n" +
-             "This is due to the introduction of keyword arugments that attempt to turn the last argument into a hash using #to_hash.\n" +
-             "This can be avoided by explicitly passing an options hash as the last argument.\n" +
-             "Called from #{Gem.location_of_caller.join(':')}"
-        self.to_h
-      else
-        super
       end
     end
   end

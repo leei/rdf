@@ -7,23 +7,23 @@ module RDF
   # Also compatible with International Resource Identifier (IRI)
   #
   # @example Creating a URI reference (1)
-  #   uri = RDF::URI.new("http://rubygems.org/gems/rdf")
+  #   uri = RDF::URI.new("https://rubygems.org/gems/rdf")
   #
   # @example Creating a URI reference (2)
   #   uri = RDF::URI.new(scheme: 'http', host: 'rubygems.org', path: '/gems/rdf')
-  #     #=> RDF::URI.new("http://rubygems.org/gems/rdf")
+  #     #=> RDF::URI.new("https://rubygems.org/gems/rdf")
   #
   # @example Creating an interned URI reference
-  #   uri = RDF::URI.intern("http://rubygems.org/gems/rdf")
+  #   uri = RDF::URI.intern("https://rubygems.org/gems/rdf")
   #
   # @example Getting the string representation of a URI
-  #   uri.to_s #=> "http://rubygems.org/gems/rdf"
+  #   uri.to_s #=> "https://rubygems.org/gems/rdf"
   #
-  # http://en.wikipedia.org/wiki/Internationalized_Resource_Identifier
-  # @see http://en.wikipedia.org/wiki/Uniform_Resource_Identifier
-  # @see http://www.ietf.org/rfc/rfc3986.txt
-  # @see http://www.ietf.org/rfc/rfc3987.txt
-  # @see http://addressable.rubyforge.org/
+  # @see https://en.wikipedia.org/wiki/Internationalized_Resource_Identifier
+  # @see https://en.wikipedia.org/wiki/Uniform_Resource_Identifier
+  # @see https://www.ietf.org/rfc/rfc3986.txt
+  # @see https://www.ietf.org/rfc/rfc3987.txt
+  # @see https://rubydoc.info/gems/addressable
   class URI
     include RDF::Resource
 
@@ -57,7 +57,7 @@ module RDF
 
     IQUERY = Regexp.compile("(?:#{IPCHAR}|#{IPRIVATE}|/|\\?)*").freeze
 
-    IFRAGMENT = Regexp.compile("(?:#{IPCHAR}|/|\\?)*").freeze.freeze
+    IFRAGMENT = Regexp.compile("(?:#{IPCHAR}|/|\\?)*").freeze
 
     ISEGMENT = Regexp.compile("(?:#{IPCHAR})*").freeze
     ISEGMENT_NZ = Regexp.compile("(?:#{IPCHAR})+").freeze
@@ -81,7 +81,7 @@ module RDF
     IRI = Regexp.compile("^#{SCHEME}:(?:#{IHIER_PART})(?:\\?#{IQUERY})?(?:\\##{IFRAGMENT})?$").freeze
 
     # Split an IRI into it's component parts
-    IRI_PARTS = /^(?:([^:\/?#]+):)?(?:\/\/([^\/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/
+    IRI_PARTS = /^(?:([^:\/?#]+):)?(?:\/\/([^\/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/.freeze
 
     # Remove dot expressions regular expressions
     RDS_2A = /^\.?\.\/(.*)$/.freeze
@@ -139,12 +139,10 @@ module RDF
     # object can't be returned for some reason, this method will fall back
     # to returning a freshly-allocated one.
     #
-    # @param (see #initialize)
+    # (see #initialize)
     # @return [RDF::URI] an immutable, frozen URI object
-    def self.intern(*args)
-      str = args.first
-      args << {} unless args.last.is_a?(Hash)  # FIXME: needed until #to_hash is removed to avoid DEPRECATION warning.
-      (cache[(str = str.to_s).to_sym] ||= self.new(*args)).freeze
+    def self.intern(str, *args, **options)
+      (cache[(str = str.to_s).to_sym] ||= self.new(str, *args, **options)).freeze
     end
 
     ##
@@ -171,8 +169,7 @@ module RDF
     def self.normalize_path(path)
       output, input = "", path.to_s
       if input.encoding != Encoding::ASCII_8BIT
-        input = input.dup if input.frozen?
-        input = input.force_encoding(Encoding::ASCII_8BIT)
+        input = input.dup.force_encoding(Encoding::ASCII_8BIT)
       end
       until input.empty?
         if input.match(RDS_2A)
@@ -201,10 +198,10 @@ module RDF
     end
 
     ##
-    # @overload URI(uri, **options)
+    # @overload initialize(uri, **options)
     #   @param  [URI, String, #to_s]    uri
     #
-    # @overload URI(**options)
+    # @overload initialize(**options)
     #   @param  [Hash{Symbol => Object}] options
     #   @option [String, #to_s] :scheme The scheme component.
     #   @option [String, #to_s] :user The user component.
@@ -224,14 +221,13 @@ module RDF
     #   @param [Boolean] validate (false)
     #   @param [Boolean] canonicalize (false)
     def initialize(*args, validate: false, canonicalize: false, **options)
+      @value = @object = @hash = nil
+      @mutex = Mutex.new
       uri = args.first
       if uri
-        @value = uri.to_s
-        if @value.encoding != Encoding::UTF_8
-          @value = @value.dup if @value.frozen?
-          @value.force_encoding(Encoding::UTF_8)
-          @value.freeze
-        end
+        @value = uri.to_s.dup
+        @value.dup.force_encoding(Encoding::UTF_8) if @value.encoding != Encoding::UTF_8
+        @value.freeze
       else
         %w(
           scheme
@@ -344,7 +340,7 @@ module RDF
     # @return [Boolean] `true` or `false`
     # @since 0.3.9
     def valid?
-      to_s.match(RDF::URI::IRI) || false
+      RDF::URI::IRI.match(to_s) || false
     end
 
     ##
@@ -408,7 +404,7 @@ module RDF
     # @see <http://tools.ietf.org/html/rfc3986#section-5.2>
     # @see RDF::URI#/
     # @see RDF::URI#+
-    # @param  [Array<String, RDF::URI, #to_s>] uris
+    # @param  [Array<String, RDF::URI, #to_s>] uris absolute or relative URIs.
     # @return [RDF::URI]
     # @see http://tools.ietf.org/html/rfc3986#section-5.2.2
     # @see http://tools.ietf.org/html/rfc3986#section-5.2.3
@@ -433,7 +429,9 @@ module RDF
           joined_parts[:query] = uri.query
         else
           # Merge path segments from section 5.2.3
-          base_path = path.to_s.sub(/\/[^\/]*$/, '/')
+          # Note that if the path includes no segments, the entire path is removed
+          #  > return a string consisting of the reference's path component appended to all but the last segment of the base URI's path (i.e., excluding any characters after the right-most "/" in the base URI path, or excluding the entire base URI path if it does not contain any "/" characters).
+          base_path = path.to_s.include?('/') ? path.to_s.sub(/\/[^\/]*$/, '/') : ''
           joined_parts[:path] = self.class.normalize_path(base_path + uri.path)
           joined_parts[:query] = uri.query
         end
@@ -441,7 +439,7 @@ module RDF
       end
 
       # Return joined URI
-      RDF::URI.new(joined_parts)
+      RDF::URI.new(**joined_parts)
     end
 
     ##
@@ -458,6 +456,8 @@ module RDF
     # RFC3986 section 5.2 as part of the merging and normalization process;
     # this method does not perform any normalization, removal of spurious
     # paths, or removal of parent directory references `(/../)`.
+    #
+    # When `fragment` is a path segment containing a colon, best practice is to prepend a `./` and use {#join}, which resolves dot-segments.
     #
     # See also `#+`, which concatenates the string forms of two URIs without
     # any sort of checking or processing.
@@ -507,7 +507,7 @@ module RDF
           case fragment.to_s[0,1]
           when '#'
             # Base ending with '/', fragment beginning with '#'. The fragment wins, we use '#'.
-            res.path = res.path.to_s.sub!(/\/*$/, '')
+            res.path = res.path.to_s.sub(/\/*$/, '')
             # Add fragment
             res.fragment = fragment.to_s.sub(/^#+/,'')
           else
@@ -572,7 +572,7 @@ module RDF
         self
       else
         RDF::URI.new(
-          object.merge(path: '/').
+          **object.merge(path: '/').
           keep_if {|k, v| [:scheme, :authority, :path].include?(k)})
       end
     end
@@ -657,19 +657,21 @@ module RDF
     #
     # @return [RDF::URI]
     def dup
-      self.class.new((@value || @object).dup)
+      self.class.new(@value, **(@object || {}))
     end
 
     ##
     # @private
     def freeze
       unless frozen?
-        # Create derived components
-        authority; userinfo; user; password; host; port
-        @value  = value.freeze
-        @object = object.freeze
-        @hash = hash.freeze
-        super
+        @mutex.synchronize do
+          # Create derived components
+          authority; userinfo; user; password; host; port
+          @value  = value.freeze
+          @object = object.freeze
+          @hash = hash.freeze
+          super
+        end
       end
       self
     end
@@ -796,7 +798,8 @@ module RDF
     # lexical representation of URI, either absolute or relative
     # @return [String] 
     def value
-      @value ||= [
+      return @value if @value
+      @value = [
         ("#{scheme}:" if absolute?),
         ("//#{authority}" if authority),
         path,
@@ -810,7 +813,7 @@ module RDF
     #
     # @return [Integer]
     def hash
-      @hash ||= (value.hash * -1)
+      @hash || @hash = (value.hash * -1)
     end
 
     ##
@@ -818,7 +821,7 @@ module RDF
     #
     # @return [Hash{Symbol => String}]
     def object
-      @object ||= parse(@value)
+      @object || @object = parse(@value)
     end
     alias_method :to_h, :object
 
@@ -830,23 +833,23 @@ module RDF
     def parse(value)
       value = value.to_s.dup.force_encoding(Encoding::ASCII_8BIT)
       parts = {}
-      if matchdata = value.to_s.match(IRI_PARTS)
-        scheme, authority, path, query, fragment = matchdata.to_a[1..-1]
+      if matchdata = IRI_PARTS.match(value)
+        scheme, authority, path, query, fragment = matchdata[1..-1]
         userinfo, hostport = authority.to_s.split('@', 2)
         hostport, userinfo = userinfo, nil unless hostport
         user, password = userinfo.to_s.split(':', 2)
         host, port = hostport.to_s.split(':', 2)
 
-        parts[:scheme] = (scheme.force_encoding(Encoding::UTF_8) if scheme)
-        parts[:authority] = (authority.force_encoding(Encoding::UTF_8) if authority)
-        parts[:userinfo] = (userinfo.force_encoding(Encoding::UTF_8) if userinfo)
-        parts[:user] = (user.force_encoding(Encoding::UTF_8) if user)
-        parts[:password] = (password.force_encoding(Encoding::UTF_8) if password)
-        parts[:host] = (host.force_encoding(Encoding::UTF_8) if host)
-        parts[:port] = (::URI.decode(port).to_i if port)
-        parts[:path] = (path.to_s.force_encoding(Encoding::UTF_8) unless path.empty?)
-        parts[:query] = (query[1..-1].force_encoding(Encoding::UTF_8) if query)
-        parts[:fragment] = (fragment[1..-1].force_encoding(Encoding::UTF_8) if fragment)
+        parts[:scheme] = (scheme.dup.force_encoding(Encoding::UTF_8) if scheme)
+        parts[:authority] = (authority.dup.force_encoding(Encoding::UTF_8) if authority)
+        parts[:userinfo] = (userinfo.dup.force_encoding(Encoding::UTF_8) if userinfo)
+        parts[:user] = (user.dup.force_encoding(Encoding::UTF_8) if user)
+        parts[:password] = (password.dup.force_encoding(Encoding::UTF_8) if password)
+        parts[:host] = (host.dup.force_encoding(Encoding::UTF_8) if host)
+        parts[:port] = (URI.decode(port).to_i if port)
+        parts[:path] = (path.to_s.dup.force_encoding(Encoding::UTF_8) unless path.empty?)
+        parts[:query] = (query[1..-1].dup.force_encoding(Encoding::UTF_8) if query)
+        parts[:fragment] = (fragment[1..-1].dup.force_encoding(Encoding::UTF_8) if fragment)
       end
       
       parts
@@ -864,7 +867,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def scheme=(value)
-      object[:scheme] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:scheme] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @value = nil
       self
     end
@@ -888,7 +891,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def user=(value)
-      object[:user] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:user] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @object[:userinfo] = format_userinfo("")
       @object[:authority] = format_authority
       @value = nil
@@ -899,7 +902,7 @@ module RDF
     # Normalized version of user
     # @return [String]
     def normalized_user
-      ::URI.encode(::URI.decode(user), /[^#{IUNRESERVED}|#{SUB_DELIMS}]/) if user
+      URI.encode(URI.decode(user), /[^#{IUNRESERVED}|#{SUB_DELIMS}]/) if user
     end
 
     ##
@@ -914,7 +917,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def password=(value)
-      object[:password] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:password] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @object[:userinfo] = format_userinfo("")
       @object[:authority] = format_authority
       @value = nil
@@ -925,14 +928,16 @@ module RDF
     # Normalized version of password
     # @return [String]
     def normalized_password
-      ::URI.encode(::URI.decode(password), /[^#{IUNRESERVED}|#{SUB_DELIMS}]/) if password
+      URI.encode(URI.decode(password), /[^#{IUNRESERVED}|#{SUB_DELIMS}]/) if password
     end
+
+    HOST_FROM_AUTHORITY_RE = /(?:[^@]+@)?([^:]+)(?::.*)?$/.freeze
 
     ##
     # @return [String]
     def host
       object.fetch(:host) do
-        @object[:host] = ($1 if @object[:authority].to_s.match(/(?:[^@]+@)?([^:]+)(?::.*)?$/))
+        @object[:host] = ($1 if @object[:authority] && HOST_FROM_AUTHORITY_RE.match(@object[:authority]))
       end
     end
 
@@ -940,7 +945,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def host=(value)
-      object[:host] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:host] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @object[:authority] = format_authority
       @value = nil
       self
@@ -954,11 +959,13 @@ module RDF
       normalize_segment(host, IHOST, true).chomp('.') if host
     end
 
+    PORT_FROM_AUTHORITY_RE = /:(\d+)$/.freeze
+
     ##
     # @return [String]
     def port
       object.fetch(:port) do
-        @object[:port] = ($1 if @object[:authority].to_s.match(/:(\d+)$/))
+        @object[:port] = ($1 if @object[:authority] && PORT_FROM_AUTHORITY_RE.match(@object[:authority]))
       end
     end
 
@@ -1000,8 +1007,8 @@ module RDF
     def path=(value)
       if value
         # Always lead with a slash
-        value = "/#{value}" if host && value.to_s =~ /^[^\/]/
-        object[:path] = value.to_s.force_encoding(Encoding::UTF_8)
+        value = "/#{value}" if host && value.to_s.match?(/^[^\/]/)
+        object[:path] = value.to_s.dup.force_encoding(Encoding::UTF_8)
       else
         object[:path] = nil
       end
@@ -1060,7 +1067,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def query=(value)
-      object[:query] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:query] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @value = nil
       self
     end
@@ -1084,7 +1091,7 @@ module RDF
     # @param [String, #to_s] value
     # @return [RDF::URI] self
     def fragment=(value)
-      object[:fragment] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:fragment] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       @value = nil
       self
     end
@@ -1109,7 +1116,7 @@ module RDF
     # @return [RDF::URI] self
     def authority=(value)
       object.delete_if {|k, v| [:user, :password, :host, :port, :userinfo].include?(k)}
-      object[:authority] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:authority] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       user; password; userinfo; host; port
       @value = nil
       self
@@ -1139,7 +1146,7 @@ module RDF
     # @return [RDF::URI] self
     def userinfo=(value)
       object.delete_if {|k, v| [:user, :password, :authority].include?(k)}
-      object[:userinfo] = (value.to_s.force_encoding(Encoding::UTF_8) if value)
+      object[:userinfo] = (value.to_s.dup.force_encoding(Encoding::UTF_8) if value)
       user; password; authority
       @value = nil
       self
@@ -1173,8 +1180,8 @@ module RDF
         inject(return_type == Hash ? {} : []) do |memo,kv|
           k,v = kv.to_s.split('=', 2)
           next if k.to_s.empty?
-          k = ::URI.decode(k)
-          v = ::URI.decode(v) if v
+          k = URI.decode(k)
+          v = URI.decode(v) if v
           if return_type == Hash
             case memo[k]
             when nil then memo[k] = v
@@ -1254,6 +1261,26 @@ module RDF
       return res
     end
 
+    ##
+    # Dump of data needed to reconsitute this object using Marshal.load
+    # This override is needed to avoid serializing @mutex.
+    #
+    # @param [Integer] level The maximum depth of objects to dump.
+    # @return [String] The dump of data needed to reconsitute this object.
+    def _dump(level)
+      value
+    end
+
+    ##
+    # Load dumped data to reconsitute marshaled object
+    # This override is needed to avoid serializing @mutex.
+    #
+    # @param [String] data The dump of data needed to reconsitute this object.
+    # @return [RDF::URI] The reconsituted object.
+    def self._load(data)
+      new(data)
+    end
+
   private
 
     ##
@@ -1265,11 +1292,10 @@ module RDF
     # @return [String]
     def normalize_segment(value, expr, downcase = false)
       if value
-        value = value.dup if value.frozen?
-        value = value.force_encoding(Encoding::UTF_8)
-        decoded = ::URI.decode(value)
+        value = value.dup.force_encoding(Encoding::UTF_8)
+        decoded = URI.decode(value)
         decoded.downcase! if downcase
-        ::URI.encode(decoded, /[^(?:#{expr})]/)
+        URI.encode(decoded, /[^(?:#{expr})]/)
       end
     end
 
@@ -1289,24 +1315,25 @@ module RDF
       end
     end
 
-  protected
-    ##
-    # @overload #to_hash
-    #   Returns object representation of this URI, broken into components
-    #
-    #   @return (see #object)
-    #   @deprecated Use {#to_h} instead.
-    def method_missing(meth, *args)
-      case meth
-      when :to_hash
-        warn "[DEPRECATION] RDF::URI#to_hash is deprecated, use RDF::URI#to_h instead.\n" +
-             "This is due to the introduction of keyword arugments that attempt to turn the last argument into a hash using #to_hash.\n" +
-             "This can be avoided by explicitly passing an options hash as the last argument.\n" +
-             "Called from #{Gem.location_of_caller.join(':')}"
-        self.to_h
-      else
-        super
-      end
+    # URI encode matching characters in value
+    # From URI gem, as this is now generally deprecated
+    def self.encode(str, expr)
+      str.gsub(expr) do
+        us = $&
+        tmp = ''
+        us.each_byte do |uc|
+          tmp << sprintf('%%%02X', uc)
+        end
+        tmp
+      end.force_encoding(Encoding::US_ASCII)
+    end
+
+    # URI decode escape sequences in value
+    # From URI gem, as this is now generally deprecated
+    def self.decode(str)
+      enc = str.encoding
+      enc = Encoding::UTF_8 if enc == Encoding::US_ASCII
+      str.gsub(PCT_ENCODED) { [$&[1, 2]].pack('H2').force_encoding(enc) }
     end
   end
 

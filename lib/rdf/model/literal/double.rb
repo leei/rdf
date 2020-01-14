@@ -11,7 +11,7 @@ module RDF; class Literal
   # @see   http://www.w3.org/TR/xmlschema11-2/#double
   # @since 0.2.1
   class Double < Numeric
-    DATATYPE = RDF::XSD.double
+    DATATYPE = RDF::URI("http://www.w3.org/2001/XMLSchema#double")
     GRAMMAR  = /^(?:NaN|\-?INF|[+\-]?(?:\d+(:?\.\d*)?|\.\d+)(?:[eE][\+\-]?\d+)?)$/.freeze
 
     ##
@@ -30,7 +30,7 @@ module RDF; class Literal
         end
         when value.is_a?(::Float)     then value
         when value.respond_to?(:to_f) then value.to_f
-        else Float(value.to_s) rescue nil # FIXME
+        else 0.0 # FIXME
       end
     end
 

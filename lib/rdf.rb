@@ -4,6 +4,10 @@ require 'date'
 require 'time'
 
 require 'rdf/version'
+require 'rdf/extensions'
+
+# When loading, issue deprecation warning on forthcoming unsupported versions of Ruby
+warn "[DEPRECATION] Ruby 2.4+ required in next version 3.1 of RDF.rb" if RUBY_VERSION < "2.4"
 
 module RDF
   # RDF mixins
@@ -55,7 +59,7 @@ module RDF
   # RDF vocabularies
   autoload :Vocabulary,        'rdf/vocabulary'
   autoload :StrictVocabulary,  'rdf/vocabulary'
-  VOCABS = Dir.glob(File.join(File.dirname(__FILE__), 'rdf', 'vocab', '*.rb')).map { |f| File.basename(f)[0...-(File.extname(f).size)].to_sym } rescue []
+  VOCABS = Dir.glob(File.expand_path("../rdf/vocab/*.rb", __FILE__)).map { |f| File.basename(f)[0...-(File.extname(f).size)].to_sym } rescue []
 
   # Use const_missing instead of autoload to load most vocabularies so we can provide deprecation messages
   def self.const_missing(constant)
@@ -75,8 +79,8 @@ module RDF
   #
   # @param (see RDF::Resource#initialize)
   # @return [RDF::Resource]
-  def self.Resource(*args, &block)
-    Resource.new(*args, &block)
+  def self.Resource(*args)
+    Resource.new(*args)
   end
 
   ##
@@ -84,8 +88,8 @@ module RDF
   #
   # @param (see RDF::Node#initialize)
   # @return [RDF::Node]
-  def self.Node(*args, &block)
-    Node.new(*args, &block)
+  def self.Node(*args)
+    Node.new(*args)
   end
 
   ##
@@ -93,8 +97,15 @@ module RDF
   #
   # @param (see RDF::URI#initialize)
   # @return [RDF::URI]
-  def self.URI(*args, &block)
-    (uri = args.first).respond_to?(:to_uri) ? uri.to_uri : URI.new(*args, &block)
+  def self.URI(*args)
+    if args.first.respond_to?(:to_uri)
+      args.first.to_uri
+    elsif args.first.is_a?(Hash)
+      URI.new(**args.first)
+    else
+      opts = args.last.is_a?(Hash) ? args.pop : {}
+      URI.new(*args, **opts)
+    end
   end
 
   ##
@@ -102,10 +113,10 @@ module RDF
   #
   # @param (see RDF::Literal#initialize)
   # @return [RDF::Literal]
-  def self.Literal(*args, &block)
-    case literal = args.first
+  def self.Literal(literal, **options)
+    case literal
       when RDF::Literal then literal
-      else Literal.new(*args, &block)
+      else Literal.new(literal, **options)
     end
   end
 
@@ -115,7 +126,7 @@ module RDF
   # @param (see RDF::Graph#initialize)
   # @return [RDF::Graph]
   def self.Graph(**options, &block)
-    Graph.new(options, &block)
+    Graph.new(**options, &block)
   end
 
   ##
@@ -167,11 +178,11 @@ module RDF
   #   @option options [RDF::Resource]  :graph_name   (nil)
   #   @return [RDF::Statement]
   #
-  def self.Statement(*args)
-    if args.empty?
+  def self.Statement(*args, **options)
+    if args.empty? && options.empty?
       RDF[:Statement]
     else
-      Statement.new(*args)
+      Statement.new(*args, **options)
     end
   end
 
@@ -197,7 +208,7 @@ module RDF
   # @return [#to_s] property
   # @return [URI]
   def self.[](property)
-    property.to_s =~ %r{_\d+} ? RDF::URI("#{to_uri}#{property}") : RDF::RDFV[property]
+    property.to_s.match?(%r{_\d+}) ? RDF::URI("#{to_uri}#{property}") : RDF::RDFV[property]
   end
 
   ##
@@ -220,12 +231,14 @@ module RDF
     super || RDF::RDFV.respond_to?(method, include_all)
   end
 
+  RDF_N_REGEXP = %r{_\d+}.freeze
+
   ##
   # Delegate other methods to RDF::RDFV
   def self.method_missing(property, *args, &block)
     if args.empty?
       # Special-case rdf:_n for all integers
-      property.to_s =~ %r{_\d+} ? RDF::URI("#{to_uri}#{property}") : RDF::RDFV.send(property)
+      RDF_N_REGEXP.match?(property) ? RDF::URI("#{to_uri}#{property}") : RDF::RDFV.send(property)
     else
       super
     end

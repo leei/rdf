@@ -90,7 +90,7 @@ module RDF
     #   the resulting solution sequence
     # @see    RDF::Query#execute
     def self.execute(queryable, patterns = {}, options = {}, &block)
-      self.new(patterns, options, &block).execute(queryable, options)
+      self.new(patterns, **options, &block).execute(queryable, **options)
     end
 
     ##
@@ -117,12 +117,6 @@ module RDF
     end
 
     ##
-    # The variables used in this query.
-    #
-    # @return [Hash{Symbol => RDF::Query::Variable}]
-    attr_reader :variables
-
-    ##
     # The patterns that constitute this query.
     #
     # @return [Array<RDF::Query::Pattern>]
@@ -139,6 +133,12 @@ module RDF
     #
     # @return [Hash]
     attr_reader :options
+
+    ##
+    # Scope the query to named graphs matching value
+    #
+    # @return [RDF::Resource, RDF::Query::Variable, false] graph_name
+    attr_accessor :graph_name
 
     ##
     # Initializes a new basic graph pattern query.
@@ -177,14 +177,16 @@ module RDF
     #     Alias for `:graph_name`.
     #   @param  [Hash{Symbol => Object}] options
     #     any additional keyword options
+    # @option options [Boolean] validate (false)
+    #   validate patterns
     #   @yield  [query]
     #   @yieldparam  [RDF::Query] query
     #   @yieldreturn [void] ignored
-    def initialize(*patterns, solutions: nil, graph_name: nil, name: nil, **options, &block)
+    def initialize(*patterns, solutions: nil, graph_name: nil, name: nil, validate: false, **options, &block)
       @options = options.dup
-      @variables = {}
       @solutions = Query::Solutions(solutions)
       graph_name = name if graph_name.nil?
+      @graph_name = graph_name
 
       patterns << @options if patterns.empty?
 
@@ -194,14 +196,14 @@ module RDF
         else patterns
       end
 
-      self.graph_name = graph_name
-
       if block_given?
         case block.arity
           when 1 then block.call(self)
           else instance_eval(&block)
         end
       end
+
+      validate! if validate
     end
 
     ##
@@ -226,7 +228,7 @@ module RDF
     #   whether this is an optional pattern
     # @return [void] self
     def pattern(pattern, **options)
-      @patterns << Pattern.from(pattern, options)
+      @patterns << Pattern.from(pattern, **options)
       self
     end
 
@@ -238,7 +240,7 @@ module RDF
     # @return [RDF::Query] a copy of `self`
     # @since  0.3.0
     def optimize(**options)
-      self.dup.optimize!(options)
+      self.dup.optimize!(**options)
     end
 
     ##
@@ -297,10 +299,7 @@ module RDF
     #   the resulting solution sequence
     # @see    http://www.holygoat.co.uk/blog/entry/2005-10-25-1
     # @see    http://www.w3.org/TR/sparql11-query/#emptyGroupPattern
-    def execute(queryable, solutions: Solution.new, graph_name: nil, name: nil, **options, &block)
-      validate!
-      options = {bindings: {}}.merge(options)
-
+    def execute(queryable, bindings: {}, solutions: Solution.new, graph_name: nil, name: nil, **options, &block)
       # Use provided solutions to allow for query chaining
       # Otherwise, a quick empty solution simplifies the logic below; no special case for
       # the first pattern
@@ -314,15 +313,14 @@ module RDF
 
       patterns = @patterns
       graph_name = name if graph_name.nil?
-      graph_name = self.graph_name if graph_name.nil?
-      options[:graph_name] = graph_name unless graph_name.nil?
+      @graph_name = graph_name unless graph_name.nil?
 
       # Add graph_name to pattern, if necessary
-      unless graph_name.nil?
+      unless @graph_name.nil?
         if patterns.empty?
-          patterns = [Pattern.new(nil, nil, nil, graph_name: graph_name)]
+          patterns = [Pattern.new(nil, nil, nil, graph_name: @graph_name)]
         else
-          apply_graph_name(graph_name)
+          apply_graph_name(@graph_name)
         end
       end
 
@@ -330,15 +328,15 @@ module RDF
 
         old_solutions, @solutions = @solutions, Query::Solutions()
 
-        options[:bindings].each_key do |variable|
+        bindings.each_key do |variable|
           if pattern.variables.include?(variable)
             unbound_solutions, old_solutions = old_solutions, Query::Solutions()
-            options[:bindings][variable].each do |binding|
+            bindings[variable].each do |binding|
               unbound_solutions.each do |solution|
                 old_solutions << solution.merge(variable => binding)
               end
             end
-            options[:bindings].delete(variable)
+            bindings.delete(variable)
           end
         end
 
@@ -363,8 +361,9 @@ module RDF
         return @solutions if @solutions.empty?
 
         if !pattern.optional?
-          # We have no solutions for variables we should have solutions for:
-          need_vars = pattern.variables.keys
+          # We have no solutions for variables we should have solutions for
+          # (excludes non-distinguished variables):
+          need_vars = pattern.variables.select {|k,v| v.distinguished?}.keys
           @solutions.each do |solution|
             break if need_vars.empty?
             need_vars -= solution.bindings.keys
@@ -410,38 +409,26 @@ module RDF
     # Is this query scoped to a named graph?
     # @return [Boolean]
     def named?
-      !!options[:graph_name]
+      !!graph_name
     end
     
     # Is this query scoped to the default graph?
     # @return [Boolean]
     def default?
-      options[:graph_name] == false
+      graph_name == false
     end
     
     # Is this query unscoped? This indicates that it can return results from
     # either a named graph or the default graph.
     # @return [Boolean]
     def unnamed?
-      options[:graph_name].nil?
-    end
-
-    # Scope the query to named graphs matching value
-    # @param [RDF::IRI, RDF::Query::Variable] value
-    # @return [RDF::IRI, RDF::Query::Variable]
-    def graph_name=(value)
-      options[:graph_name] = value
-    end
-
-    # Scope of this query, if any
-    # @return [RDF::IRI, RDF::Query::Variable]
-    def graph_name
-      options[:graph_name]
+      graph_name.nil?
     end
 
     # Apply the graph name specified (or configured) to all patterns that have no graph name
     # @param [RDF::IRI, RDF::Query::Variable] graph_name (self.graph_name)
-    def apply_graph_name(graph_name = options[:graph_name])
+    def apply_graph_name(graph_name = nil)
+      graph_name ||= self.graph_name
       patterns.each {|pattern| pattern.graph_name = graph_name if pattern.graph_name.nil?} unless graph_name.nil?
     end
 
@@ -450,7 +437,29 @@ module RDF
     #
     # @return [Boolean]
     def variable?
-      patterns.any?(&:variable?) || graph_name && graph_name.variable?
+      !variables.empty?
+    end
+    alias_method :variables?, :variable?
+    alias_method :has_variables?, :variable?
+
+    ##
+    # The variables used in this query. This includes variables used in patterns along with the graph_name itself, if it is a variable.
+    #
+    # @return [Hash{Symbol => RDF::Query::Variable}]
+    def variables
+      # Set variables used in query
+      vars = patterns.inject({}) do |memo, pattern|
+        memo.merge(pattern.variables)
+      end
+      graph_name.is_a?(Variable) ? vars.merge(graph_name.to_sym => graph_name) : vars
+    end
+
+    ##
+    # Returns the number of variables in this query.
+    #
+    # @return [Integer] (0..3)
+    def variable_count
+      variables.keys.length
     end
 
     ##
@@ -496,17 +505,16 @@ module RDF
     # @return [RDF::Query]
     def dup
       patterns = @patterns.map {|p| p.dup}
-      patterns << @options.merge(solutions: @solutions.dup)
-      Query.new(*patterns)
+      Query.new(patterns, solutions: @solutions.dup, **options)
     end
 
     ##
-    # Determine if the URI is a valid according to RFC3987
+    # Determine if the query containts valid patterns
     #
     # @return [Boolean] `true` or `false`
     # @since 0.3.9
     def valid?
-      !!validate!
+      !!validate! rescue raise false
     rescue
       false
     end

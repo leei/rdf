@@ -32,7 +32,7 @@ module RDF::NTriples
     format RDF::NTriples::Format
 
     # @see http://www.w3.org/TR/rdf-testcases/#ntrip_strings
-    ESCAPE_CHARS    = ["\b", "\f", "\t", "\n", "\r", "\"", "\\"].freeze
+    ESCAPE_CHARS    = ["\b", "\f", "\t", "\n", "\r", "\"", "'", "\\"].freeze
     UCHAR4          = /\\u([0-9A-Fa-f]{4,4})/.freeze
     UCHAR8          = /\\U([0-9A-Fa-f]{8,8})/.freeze
     UCHAR           = Regexp.union(UCHAR4, UCHAR8).freeze
@@ -60,7 +60,7 @@ module RDF::NTriples
     # 166s
     PN_CHARS             = /-|[0-9]|#{PN_CHARS_U}|#{U_CHARS2}/.freeze
     # 159s
-    ECHAR                = /\\[tbnrf\\"]/.freeze
+    ECHAR                = /\\[tbnrf"'\\]/.freeze
     # 18
     IRIREF               = /<((?:#{IRI_RANGE}|#{UCHAR})*)>/.freeze
     # 141s
@@ -96,7 +96,7 @@ module RDF::NTriples
     def self.unserialize(input, **options)
       case input
         when nil then nil
-        else self.new(input, {logger: []}.merge(options)).read_value
+        else self.new(input, logger: [], **options).read_value
       end
     end
 
@@ -104,20 +104,20 @@ module RDF::NTriples
     # (see unserialize)
     # @return [RDF::Resource]
     def self.parse_subject(input, **options)
-      parse_uri(input, options) || parse_node(input, options)
+      parse_uri(input, **options) || parse_node(input, **options)
     end
 
     ##
     # (see unserialize)
     # @return [RDF::URI]
-    def self.parse_predicate(input, *options)
+    def self.parse_predicate(input, **options)
       parse_uri(input, intern: true)
     end
 
     ##
     # (see unserialize)
     def self.parse_object(input, **options)
-      parse_uri(input, options) || parse_node(input, options) || parse_literal(input, options)
+      parse_uri(input, **options) || parse_node(input, **options) || parse_literal(input, **options)
     end
 
     ##
@@ -135,7 +135,6 @@ module RDF::NTriples
     # @return [RDF::URI]
     def self.parse_uri(input, intern: false, **options)
       if input =~ URIREF
-        uri_str = unescape($1)
         RDF::URI.send(intern ? :intern : :new, unescape($1))
       end
     end
@@ -154,6 +153,21 @@ module RDF::NTriples
       end
     end
 
+    # cache constants to optimize escaping the escape chars in self.unescape
+    ESCAPE_CHARS_ESCAPED = {
+      "\\b"   =>  "\b",
+      "\\f"   =>  "\f",
+      "\\t"   =>  "\t",
+      "\\n"   =>  "\n",
+      "\\r"   =>  "\r",
+      "\\\""  =>  "\"",
+      "\\'"   =>  "'",
+      "\\\\"  =>  "\\"
+    } .freeze
+    ESCAPE_CHARS_ESCAPED_REGEXP = Regexp.union(
+      ESCAPE_CHARS_ESCAPED.keys
+    ).freeze
+
     ##
     # @param  [String] string
     # @return [String]
@@ -161,17 +175,25 @@ module RDF::NTriples
     # @see    http://blog.grayproductions.net/articles/understanding_m17n
     # @see    http://yehudakatz.com/2010/05/17/encodings-unabridged/
     def self.unescape(string)
-      string = string.dup.force_encoding(Encoding::UTF_8)
+      # Note: avoiding copying the input string when no escaping is needed
+      # greatly reduces the number of allocations and the processing time.
+      string = string.dup.force_encoding(Encoding::UTF_8) unless string.encoding == Encoding::UTF_8
+      scanner = StringScanner.new(string)
 
-      # Decode \t|\n|\r|\"|\\ character escapes:
-      ESCAPE_CHARS.each { |escape| string.gsub!(escape.inspect[1...-1], escape) }
+      buffer = ""
 
-      # Decode \uXXXX and \UXXXXXXXX code points:
-      string.gsub!(UCHAR) do
-        [($1 || $2).hex].pack('U*')
+      while !scanner.eos?
+        buffer << if scanner.scan(ESCAPE_CHARS_ESCAPED_REGEXP)
+          ESCAPE_CHARS_ESCAPED[scanner.matched]
+        elsif scanner.scan(UCHAR)
+          scanner.matched.sub(UCHAR) {[($1 || $2).hex].pack('U*')}
+        else
+          # Scan one character
+          scanner.getch
+        end
       end
 
-      string
+      buffer
     end
 
     ##
@@ -231,7 +253,7 @@ module RDF::NTriples
         uri.canonicalize! if canonicalize?
         uri
       end
-    rescue ArgumentError => e
+    rescue ArgumentError
       log_error("Invalid URI (found: \"<#{uri_str}>\")", lineno: lineno, token: "<#{uri_str}>", exception: RDF::ReaderError)
     end
 
@@ -239,7 +261,7 @@ module RDF::NTriples
     # @return [RDF::Node]
     # @see    http://www.w3.org/TR/rdf-testcases/#ntrip_grammar (nodeID)
     def read_node
-       if node_id = match(NODEID)
+      if node_id = match(NODEID)
         @nodes ||= {}
         @nodes[node_id] ||= RDF::Node.new(node_id)
       end

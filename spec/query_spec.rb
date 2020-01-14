@@ -24,7 +24,7 @@ describe RDF::Query do
     end
 
     it "adds patterns from argument" do
-      expect(RDF::Query.new(pattern, {}).patterns).to eq [pattern]
+      expect(RDF::Query.new(pattern).patterns).to eq [pattern]
     end
 
     it "adds patterns from array" do
@@ -33,6 +33,14 @@ describe RDF::Query do
 
     it "adds patterns from hash" do
       expect(RDF::Query.new(RDF::URI("a") => { RDF::URI("b")  => "c" }).patterns).to eq [pattern]
+    end
+
+    it "sets graph_name to a URI" do
+      expect(RDF::Query.new(graph_name: RDF::URI("a")).graph_name).to eq RDF::URI("a")
+    end
+
+    it "sets graph_name to false" do
+      expect(RDF::Query.new(graph_name: false).graph_name).to be_falsey
     end
   end
 
@@ -54,6 +62,11 @@ describe RDF::Query do
     it {is_expected.not_to equal orig}
     its(:patterns) {is_expected.not_to equal orig.patterns}
     its(:patterns) {is_expected.to eq orig.patterns}
+  end
+
+  describe "#options" do
+    subject {RDF::Query.new(RDF::Query::Pattern.new(), extra: :value)}
+    its(:options) {is_expected.to include(extra: :value)}
   end
 
   context "BGPs" do
@@ -178,7 +191,7 @@ describe RDF::Query do
          end
        end
     end
-    
+
     context "triple pattern combinations" do
       let(:graph) {
         # Normally we would not want all of this crap in the graph for each
@@ -295,7 +308,7 @@ describe RDF::Query do
         sol3 = q3.execute(graph, solutions: sol2)
         expect(sol3).to have_result_set [ { s: EX.x6, o: EX.target, o2: EX.target2, o3: EX.target3 } ]
       end
-      
+
       it "has bindings" do
         query = RDF::Query.new do |query|
           query << [:s, EX.p, :o]
@@ -478,7 +491,7 @@ describe RDF::Query do
           graph << [EX.xu, EX.p, EX.z]
         end
       }
-      
+
       describe "graph-1" do
         subject {
           query = RDF::Query.new {pattern [:x, EX.p, RDF::Literal::Integer.new(1)]}
@@ -488,17 +501,17 @@ describe RDF::Query do
         it "has two solutions" do
           expect(subject.count).to eq 2
         end
-        
+
         it "has xi1 as a solution" do
           expect(subject.filter(x: EX.xi1)).not_to be_empty
         end
-        
+
         it "has xi2 as a solution" do
           expect(subject.filter(x: EX.xi2)).not_to be_empty
         end
       end
 
-      
+
       describe "graph-2" do
         subject {
           query = RDF::Query.new {pattern [:x, EX.p, RDF::Literal::Double.new("1.0e0")]}
@@ -508,12 +521,16 @@ describe RDF::Query do
         it "has one solution" do
           expect(subject.count).to eq 1
         end
-        
+
         it "has xd1 as a solution" do
           expect(subject.filter(x: EX.xd1)).not_to be_empty
         end
       end
     end
+
+    it {is_expected.not_to be_variable}
+    its(:variable_count) {is_expected.to eql 0}
+    its(:variables) {is_expected.to be_empty}
 
     context "with variables" do
       let!(:graph) {
@@ -540,51 +557,85 @@ describe RDF::Query do
         end
       }
 
-      it "?s p o" do
-        query = RDF::Query.new do |query|
-          query << [RDF::Query::Variable.new("s"), EX.p, 1]
-        end
-        expect(query.execute(graph)).to have_result_set([{ s: EX.x1 }])
+      context "?s p o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(:s, EX.p, 1))}
+        it {expect(subject.execute(graph)).to have_result_set([{ s: EX.x1 }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 1}
+        its(:variables) {is_expected.to include(:s)}
       end
 
-      it "s ?p o" do
-        query = RDF::Query.new do |query|
-          query << [EX.x2, RDF::Query::Variable.new("p"), 2]
-        end
-        expect(query.execute(graph)).to have_result_set [ { p: EX.p } ]
+      context "s ?p o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(EX.x2, :p, 2))}
+        it {expect(subject.execute(graph)).to have_result_set([{ p: EX.p }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 1}
+        its(:variables) {is_expected.to include(:p)}
       end
 
-      it "s p ?o" do
-        query = RDF::Query.new do |query|
-          query << [EX.x3, EX.p, RDF::Query::Variable.new("o")]
-        end
-        expect(query.execute(graph)).to have_result_set [ { o: RDF::Literal.new(3) } ]
+      context "s p ?o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(EX.x3, EX.p, :o))}
+        it {expect(subject.execute(graph)).to have_result_set([{ o: RDF::Literal.new(3) }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 1}
+        its(:variables) {is_expected.to include(:o)}
       end
 
-      it "?s p ?o" do
-        query = RDF::Query.new do |query|
-          query << [RDF::Query::Variable.new("s"), EX.p, RDF::Query::Variable.new("o")]
-        end
-        expect(query.execute(graph)).to have_result_set [ { s: EX.x1, o: RDF::Literal.new(1) },
-                                                       { s: EX.x2, o: RDF::Literal.new(2) },
-                                                       { s: EX.x3, o: RDF::Literal.new(3) }]
+      context "?s p ?o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(:s, EX.p, :o))}
+        it {expect(subject.execute(graph)).to have_result_set([
+              { s: EX.x1, o: RDF::Literal.new(1) },
+              { s: EX.x2, o: RDF::Literal.new(2) },
+              { s: EX.x3, o: RDF::Literal.new(3) }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 2}
+        its(:variables) {is_expected.to include(:s, :o)}
       end
 
-      it "?s ?p o" do
-        query = RDF::Query.new do |query|
-          query << [RDF::Query::Variable.new("s"), RDF::Query::Variable.new("p"), 3]
-        end
-        expect(query.execute(graph)).to have_result_set [ { s: EX.x3, p: EX.p } ]
+      context "?s ?p o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(:s, :p, 3))}
+        it {expect(subject.execute(graph)).to have_result_set([{ s: EX.x3, p: EX.p }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 2}
+        its(:variables) {is_expected.to include(:s, :p)}
       end
 
-      it "s ?p ?o" do
-        query = RDF::Query.new do |query|
-          query << [ EX.x1, RDF::Query::Variable.new("p"), RDF::Query::Variable.new("o")]
-        end
-        expect(query.execute(graph)).to have_result_set [ { p: EX.p, o: RDF::Literal(1) } ]
+      context "s ?p ?o" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(EX.x1, :p, :o))}
+        it {expect(subject.execute(graph)).to have_result_set([{ p: EX.p, o: RDF::Literal(1) }])}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 2}
+        its(:variables) {is_expected.to include(:p, :o)}
+      end
+
+      context "GRAPH ?g {s p o}" do
+        subject {RDF::Query.new(RDF::Query::Pattern.new(EX.x1, EX.p, EX.o), graph_name: RDF::Query::Variable.new("g"))}
+        its(:variables?) {is_expected.to be_truthy}
+        its(:variable_count) {is_expected.to eql 1}
+        its(:variables) {is_expected.to include(:g)}
       end
     end
-    
+
+    context "with non-distinguished variables" do
+      before :each do
+        @graph = RDF::Graph.new do |graph|
+          graph << [EX.s1, EX.p, EX.o]
+          graph << [EX.s2, EX.p, EX.o]
+          graph << [EX.s2, EX.p2, EX.o2]
+        end
+      end
+
+      it "matches graphs with a bound non-distinguished variable" do
+        query = RDF::Query.new do |query|
+          query.pattern [:s, EX.p, EX.o]
+          query.pattern [RDF::Query::Variable.new(:s2, distinguished: false), EX.p2, EX.o2]
+        end
+        expect(query.execute(@graph)).to have_result_set([{ s: EX.s1, s2: EX.s2 }, { s: EX.s2, s2: EX.s2 }])
+      end
+
+      it "matches graphs with a unbound non-distinguished variable"
+    end
+
     context "with an optional pattern" do
       before :each do
         @graph = RDF::Graph.new do |graph|
@@ -611,7 +662,7 @@ describe RDF::Query do
         # restrictions, because the semantics of leading optional patterns
         # are hard to get right.
         expect do
-          query = RDF::Query.new do |query|
+          query = RDF::Query.new(validate: true) do |query|
             query.pattern [:s, EX.p2, :o], optional: true
             query.pattern [:s, EX.p, EX.o]
           end
@@ -619,7 +670,7 @@ describe RDF::Query do
         end.to raise_error(ArgumentError)
 
         expect do
-          query = RDF::Query.new do |query|
+          query = RDF::Query.new(validate: true) do |query|
             query.pattern [:s, EX.p, EX.o]
             query.pattern [:s, EX.p2, :o], optional: true
             query.pattern [:s, EX.x, EX.x]
@@ -698,7 +749,7 @@ describe RDF::Query do
               count
           ).to eq 1
         end
-        
+
         it "accepts a block" do
           expect(
             subject.
@@ -707,7 +758,7 @@ describe RDF::Query do
           ).to eq 1
         end
       end
-      
+
       context "order" do
         it "returns ordered solutions using a symbol" do
           orig = subject.dup
@@ -732,24 +783,24 @@ describe RDF::Query do
           subject.order {|a, b| a[:p] <=> b[:p]}
         end
       end
-      
+
       it "should support duplicate elimination" do
         [:distinct, :reduced].each do |op|
           solutions = RDF::Query::Solutions(subject.to_a * 2)
-          solutions.count == graph.size * 2
+          expect(solutions.count).to eq graph.size * 2
           solutions.send(op)
-          solutions.count == graph.size
+          expect(solutions.count).to eq graph.size
         end
       end
 
       it "should support offsets" do
         subject.offset(10)
-        subject.count == (graph.size - 10)
+        expect(subject.count).to eq graph.size - 10
       end
 
       it "should support limits" do
         subject.limit(10)
-        subject.count == 10
+        expect(subject.count).to eq 10
       end
     end
   end
@@ -758,7 +809,7 @@ describe RDF::Query do
     it "returns nil by default" do
       expect(subject.graph_name).to be_nil
     end
-    
+
     it "sets and returns a graph_name" do
       subject.graph_name = RDF.first
       expect(subject.graph_name).to eq RDF.first
@@ -776,24 +827,24 @@ describe RDF::Query do
     it "returns false with no graph_name" do
       expect(subject.named?).to be_falsey
     end
-    
+
     it "returns true with a graph_name" do
       subject.graph_name = RDF.first
       expect(subject.named?).to be_truthy
     end
   end
-  
+
   describe "#unnamed?" do
     it "returns true with no graph_name" do
       expect(subject.unnamed?).to be_truthy
     end
-    
+
     it "returns false with a graph_name" do
       subject.graph_name = RDF.first
       expect(subject.unnamed?).to be_falsey
     end
   end
-  
+
   describe "#+" do
     it "returns a new RDF::Query" do
       rhs = RDF::Query.new
@@ -801,7 +852,7 @@ describe RDF::Query do
       expect(q).not_to be_equal(subject)
       expect(q).not_to be_equal(rhs)
     end
-    
+
     it "contains patterns from each query in order" do
       subject.pattern [EX.first, EX.second, EX.third]
       rhs = RDF::Query.new
@@ -845,30 +896,30 @@ describe RDF::Query do
         true
       ],
       "query with valid pattern" => [
-        described_class.new {pattern [RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var]},
+        described_class.new {pattern [RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var]},
         true
       ],
       "query with invalid pattern" => [
-        described_class.new {pattern [RDF::URI("http://rubygems.org/gems/rdf"), "creator", :var]},
+        described_class.new {pattern [RDF::URI("https://rubygems.org/gems/rdf"), "creator", :var]},
         false
       ],
       "query with optional pattern" => [
         described_class.new {
-          pattern RDF::Query::Pattern.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
+          pattern RDF::Query::Pattern.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
         },
         true
       ],
       "query with required and optional patterns" => [
         described_class.new {
-          pattern RDF::Query::Pattern.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var)
-          pattern RDF::Query::Pattern.new(RDF::URI("http://rubygems.org/gems/rdf-spec"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
+          pattern RDF::Query::Pattern.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var)
+          pattern RDF::Query::Pattern.new(RDF::URI("https://rubygems.org/gems/rdf-spec"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
         },
         true
       ],
       "query with optional and required patterns" => [
         described_class.new {
-          pattern RDF::Query::Pattern.new(RDF::URI("http://rubygems.org/gems/rdf-spec"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
-          pattern RDF::Query::Pattern.new(RDF::URI("http://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var)
+          pattern RDF::Query::Pattern.new(RDF::URI("https://rubygems.org/gems/rdf-spec"), RDF::URI("http://purl.org/dc/terms/creator"), :var, optional: true)
+          pattern RDF::Query::Pattern.new(RDF::URI("https://rubygems.org/gems/rdf"), RDF::URI("http://purl.org/dc/terms/creator"), :var)
         },
         false
       ],
@@ -915,7 +966,7 @@ describe RDF::Query do
           FOAF.name => :name,
           FOAF.mbox => :email,
         }
-      })
+      }, **{})
       expect(query).to be_a(RDF::Query)
       expect(query.patterns.size).to eq 3
       expect(query.patterns[0]).to eq RDF::Query::Pattern.new(:person, RDF.type,  FOAF.Person)

@@ -60,7 +60,7 @@ describe RDF::Graph do
     end
 
     it "should not be instantiable by default" do
-      expect { described_class.new(graph_name: "http://rubygems.org/gems/rdf") }.to raise_error(ArgumentError)
+      expect { described_class.new(graph_name: "https://rubygems.org/gems/rdf") }.to raise_error(ArgumentError)
     end
 
     it "has statement in default graph" do
@@ -181,7 +181,7 @@ describe RDF::Graph do
       it 'inserts to graph' do
         st = [RDF::URI('s'), RDF::URI('p'), 'o']
         expect { transactable.transaction(mutable: true) { insert(st) } }
-          .to change { transactable.statements }.to contain_exactly(st)
+          .to change { transactable.statements }.to contain_exactly(RDF::Statement.from(st, graph_name: name))
       end
       
       it 'deletes from graph' do
@@ -216,7 +216,7 @@ describe RDF::Graph do
     end
 
     it "Creating an empty named graph" do
-      expect {described_class.new(graph_name: "http://rubygems.org/", data: RDF::Repository.new)}.not_to raise_error
+      expect {described_class.new(graph_name: "https://rubygems.org/", data: RDF::Repository.new)}.not_to raise_error
     end
 
     it "Loading graph data from a URL (1)", skip: "requires RDF/XML" do

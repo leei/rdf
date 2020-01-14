@@ -22,9 +22,10 @@ class RDF::Query
   #
   class Solution
     # Undefine all superfluous instance methods:
+    alias_method :__send, :send
     undef_method(*instance_methods.
                   map(&:to_s).
-                  select {|m| m =~ /^\w+$/}.
+                  select {|m| m.match?(/^\w+$/)}.
                   reject {|m| %w(object_id dup instance_eval inspect to_s private_methods class should should_not pretty_print).include?(m) || m[0,2] == '__'}.
                   map(&:to_sym))
 
@@ -36,7 +37,7 @@ class RDF::Query
     # @param  [Hash{Symbol => RDF::Term}] bindings
     # @yield  [solution]
     def initialize(bindings = {}, &block)
-      @bindings = bindings.to_hash
+      @bindings = bindings.to_h
 
       if block_given?
         case block.arity
@@ -57,9 +58,19 @@ class RDF::Query
     # @yieldparam [RDF::Term] value
     # @return [Enumerator]
     def each_binding(&block)
-      @bindings.each(&block)
+      @bindings.each(&block) if block_given?
+      enum_binding
     end
     alias_method :each, :each_binding
+
+    ##
+    # Returns an enumerator for {#each_binding}.
+    #
+    # @return [Enumerator<RDF::Resource>]
+    # @see    #each_subject
+    def enum_binding
+      enum_for(:each_binding)
+    end
 
     ##
     # Enumerates over every variable name in this solution.
@@ -68,9 +79,19 @@ class RDF::Query
     # @yieldparam [Symbol] name
     # @return [Enumerator]
     def each_name(&block)
-      @bindings.each_key(&block)
+      @bindings.each_key(&block) if block_given?
+      enum_name
     end
     alias_method :each_key, :each_name
+
+    ##
+    # Returns an enumerator for {#each_name}.
+    #
+    # @return [Enumerator<RDF::Resource>]
+    # @see    #each_subject
+    def enum_name
+      enum_for(:each_name)
+    end
 
     ##
     # Enumerates over every variable value in this solution.
@@ -79,7 +100,17 @@ class RDF::Query
     # @yieldparam [RDF::Term] value
     # @return [Enumerator]
     def each_value(&block)
-      @bindings.each_value(&block)
+      @bindings.each_value(&block) if block_given?
+      enum_value
+    end
+
+    ##
+    # Returns an enumerator for {#each_value}.
+    #
+    # @return [Enumerator<RDF::Resource>]
+    # @see    #each_subject
+    def enum_value
+      enum_for(:each_value)
     end
 
     ##
@@ -101,9 +132,21 @@ class RDF::Query
     # @yieldparam [Variable]
     # @return [Enumerator]
     def each_variable
-      @bindings.each do |name, value|
-        yield Variable.new(name, value)
+      if block_given?
+        @bindings.each do |name, value|
+          yield Variable.new(name, value)
+        end
       end
+      enum_variable
+    end
+
+    ##
+    # Returns an enumerator for {#each_variable}.
+    #
+    # @return [Enumerator<RDF::Resource>]
+    # @see    #each_subject
+    def enum_variable
+      enum_for(:each_variable)
     end
 
     ##
@@ -264,25 +307,13 @@ class RDF::Query
   protected
 
     ##
-    # @overload #to_hash
-    #   Returns object representation of this URI, broken into components
-    #
-    #   @return (see #to_h)
-    #   @deprecated Use {#to_h} instead.
-    #
     # @overload binding(name)
     #   Return the binding for this name
     #
     #   @param  [Symbol] name
     #   @return [RDF::Term]
     def method_missing(name, *args, &block)
-      if name == :to_hash
-        warn "[DEPRECATION] RDF::Query::Solution#to_hash is deprecated, use RDF::Query::Solution#to_h instead.\n" +
-             "This is due to the introduction of keyword arugments that attempt to turn the last argument into a hash using #to_hash.\n" +
-             "This can be avoided by explicitly passing an options hash as the last argument.\n" +
-             "Called from #{Gem.location_of_caller.join(':')}"
-        self.to_h
-      elsif args.empty? && @bindings.has_key?(name.to_sym)
+      if args.empty? && @bindings.has_key?(name.to_sym)
         @bindings[name.to_sym]
       else
         super # raises NoMethodError
@@ -294,5 +325,19 @@ class RDF::Query
     def respond_to_missing?(name, include_private = false)
       @bindings.has_key?(name.to_sym) || super
     end
+
+    ##
+    # @private
+    # @param  [Symbol, #to_sym] method
+    # @return [Enumerator]
+    # @see    Object#enum_for
+    def enum_for(method = :each)
+      # Ensure that enumerators are, themselves, queryable
+      this = self
+      Enumerator.new do |yielder|
+        this.__send(method) {|*y| yielder << (y.length > 1 ? y : y.first)}
+      end
+    end
+    alias_method :to_enum, :enum_for
   end # Solution
 end # RDF::Query

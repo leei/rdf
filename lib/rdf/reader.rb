@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 module RDF
   ##
   # The base class for RDF parsers.
@@ -87,9 +88,15 @@ module RDF
     #   @yieldreturn [String] another way to provide a sample, allows lazy for retrieving the sample.
     #
     # @return [Class]
-    def self.for(options = {}, &block)
-      options = options.merge(has_reader: true) if options.is_a?(Hash)
-      if format = self.format || Format.for(options, &block)
+    def self.for(*arg, &block)
+      case arg.length
+      when 0 then arg = nil
+      when 1 then arg = arg.first
+      else
+        raise ArgumentError, "Format.for accepts zero or one argument, got #{arg.length}."
+      end
+      arg = arg.merge(has_reader: true) if arg.is_a?(Hash)
+      if format = self.format || Format.for(arg, &block)
         format.reader
       end
     end
@@ -118,22 +125,27 @@ module RDF
           symbol: :canonicalize,
           datatype: TrueClass,
           on: ["--canonicalize"],
+          control: :checkbox,
+          default: false,
           description: "Canonicalize input/output.") {true},
         RDF::CLI::Option.new(
           symbol: :encoding,
           datatype: Encoding,
+          control: :text,
           on: ["--encoding ENCODING"],
           description: "The encoding of the input stream.") {|arg| Encoding.find arg},
         RDF::CLI::Option.new(
           symbol: :intern,
           datatype: TrueClass,
+          control: :none,
           on: ["--intern"],
-          description: "Intern all parsed URIs.") {true},
+          description: "Intern all parsed URIs."),
         RDF::CLI::Option.new(
           symbol: :prefixes,
           datatype: Hash,
+          control: :none,
           multiple: true,
-          on: ["--prefixes PREFIX,PREFIX"],
+          on: ["--prefixes PREFIX:URI,PREFIX:URI"],
           description: "A comma-separated list of prefix:uri pairs.") do |arg|
             arg.split(',').inject({}) do |memo, pfxuri|
               pfx,uri = pfxuri.split(':', 2)
@@ -142,14 +154,23 @@ module RDF
         end,
         RDF::CLI::Option.new(
           symbol: :base_uri,
+          control: :url,
           datatype: RDF::URI,
           on: ["--uri URI"],
           description: "Base URI of input file, defaults to the filename.") {|arg| RDF::URI(arg)},
         RDF::CLI::Option.new(
           symbol: :validate,
           datatype: TrueClass,
+          control: :checkbox,
           on: ["--validate"],
-          description: "Validate input file.") {true},
+          description: "Validate input file."),
+        RDF::CLI::Option.new(
+          symbol: :verifySSL,
+          datatype: TrueClass,
+          default: true,
+          control: :checkbox,
+          on: ["--[no-]verifySSL"],
+          description: "Verify SSL results on HTTP GET")
       ]
     end
 
@@ -191,9 +212,11 @@ module RDF
         headers['Accept'] ||= (self.format.accept_type + %w(*/*;q=0.1)).join(", ")
       end
 
-      Util::File.open_file(filename, options) do |file|
+      Util::File.open_file(filename, **options) do |file|
         format_options = options.dup
-        format_options[:content_type] ||= file.content_type if file.respond_to?(:content_type)
+        format_options[:content_type] ||= file.content_type if
+          file.respond_to?(:content_type) &&
+          !file.content_type.to_s.include?('text/plain')
         format_options[:file_name] ||= filename
         reader = if self == RDF::Reader
           # We are the abstract reader class, find an appropriate reader
@@ -212,7 +235,7 @@ module RDF
         options[:filename] ||= filename
 
         if reader
-          reader.new(file, options, &block)
+          reader.new(file, **options, &block)
         else
           raise FormatError, "unknown RDF format: #{format_options.inspect}#{"\nThis may be resolved with a require of the 'linkeddata' gem." unless Object.const_defined?(:LinkedData)}"
         end
@@ -594,7 +617,8 @@ module RDF
     def readline
       @line = @line_rest || @input.readline
       @line, @line_rest = @line.split("\r", 2)
-      @line = @line.to_s.chomp
+      @line = String.new if @line.nil? # not frozen
+      @line.chomp!
       begin
         @line.encode!(encoding)
       rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError, Encoding::ConverterNotFoundError
